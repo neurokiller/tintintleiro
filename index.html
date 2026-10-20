@@ -35,10 +35,22 @@ let extraLives = [];
 let machineGunEvent = 0;
 let machineGunTimer = 0;
 
-// Opções de Fundo
+// Opções de Fundo e Gameplay
 let bgTheme = 0; // 0 = Original, 1 = Preto, 2 = Bandeira da China
+let autoFireEnabled = false;
+let possessedMusicEnabled = false;
+let mouseControlEnabled = false;
 let menuIndex = 0;
 let optionIndex = 0;
+
+// Controle de Mouse
+let mouseX = W / 2;
+let mouseY = H - 100;
+
+// Controle de Áudio Invertido
+let audioCtx = null;
+let reversedBuffer = null;
+let possessedSource = null;
 
 // Fundo Otimizado
 const bgCanvas = document.createElement('canvas');
@@ -66,17 +78,17 @@ generateBackground();
 const glitchText = ["TIN TIN TLOIN", "FIRST EVER!!!!!!!!!!", "GLÓRIA À CHINA", "MORTE", "HELL", "死"];
 
 // ==========================================
-// CONTROLE DE ÁUDIO
+// CONTROLE DE ÁUDIO E MÚSICA POSSUÍDA
 // ==========================================
 function playAudio() {
-  if (bgm && bgm.paused) {
+  if (bgm && bgm.paused && !possessedMusicEnabled) {
     bgm.volume = 0.4;
     bgm.play().catch(e => console.log("Áudio bloqueado:", e));
   }
 }
 
 function triggerGlitchAudio() {
-  if (!bgm) return;
+  if (!bgm || possessedMusicEnabled) return;
   try {
     bgm.playbackRate = 2.5; 
     bgm.preservesPitch = false;
@@ -89,6 +101,67 @@ function resetAudio() {
     bgm.playbackRate = 1.0;
     bgm.preservesPitch = true;
   } catch (e) { console.error(e); }
+}
+
+// MÁGICA DA MÚSICA AO CONTRÁRIO
+function togglePossessedMusic(enabled) {
+    if (!bgm) return;
+    
+    if (enabled) {
+        bgm.pause();
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        if (!reversedBuffer) {
+            // Tenta baixar e inverter o MP3
+            fetch('music.mp3')
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+                .then(audioBuffer => {
+                    const numberOfChannels = audioBuffer.numberOfChannels;
+                    const length = audioBuffer.length;
+                    const sampleRate = audioBuffer.sampleRate;
+                    const reversed = audioCtx.createBuffer(numberOfChannels, length, sampleRate);
+                    
+                    for (let channel = 0; channel < numberOfChannels; channel++) {
+                        const channelData = audioBuffer.getChannelData(channel);
+                        const reversedData = reversed.getChannelData(channel);
+                        for (let i = 0; i < length; i++) {
+                            reversedData[i] = channelData[length - 1 - i];
+                        }
+                    }
+                    reversedBuffer = reversed;
+                    playReversed();
+                })
+                .catch(err => {
+                    console.log("Erro ao inverter MP3 (bloqueio de arquivo local). Usando Efeito Glitch.", err);
+                    // Fallback insano
+                    bgm.playbackRate = 2.5;
+                    bgm.preservesPitch = false;
+                    bgm.play();
+                });
+        } else {
+            playReversed();
+        }
+    } else {
+        if (possessedSource) {
+            possessedSource.stop();
+            possessedSource = null;
+        }
+        bgm.playbackRate = 1.0;
+        bgm.preservesPitch = true;
+        bgm.play();
+    }
+}
+
+function playReversed() {
+    if (possessedSource) possessedSource.stop();
+    possessedSource = audioCtx.createBufferSource();
+    possessedSource.buffer = reversedBuffer;
+    possessedSource.loop = true;
+    possessedSource.connect(audioCtx.destination);
+    possessedSource.start();
 }
 
 // ==========================================
@@ -112,19 +185,25 @@ function setupLevel(level) {
   machineGunTimer = 0;
   extraLives = [];
   
+  // Sincroniza o mouse com a posição inicial do player
+  mouseX = player.x;
+  mouseY = player.y;
+  
   resetAudio();
+  playAudio();
 }
 
 function initGame() {
   setupLevel(1);
-  playAudio();
 }
 
-// Controle de Teclas
+// ==========================================
+// CONTROLES
+// ==========================================
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   
-  if (keys[k]) return; // Evita repetição infinita
+  if (keys[k]) return; 
   keys[k] = true;
   
   // --- MENU PRINCIPAL ---
@@ -133,24 +212,27 @@ window.addEventListener('keydown', e => {
       menuIndex = menuIndex === 0 ? 1 : 0;
     }
     if (k === 'z' || k === 'enter' || k === ' ') {
-      if (menuIndex === 0) {
-        initGame();
-      } else {
-        gameState = 'options';
-      }
+      if (menuIndex === 0) initGame();
+      else gameState = 'options';
     }
   }
   
   // --- OPÇÕES ---
   else if (gameState === 'options') {
-    if (k === 'arrowdown' || k === 's') optionIndex = (optionIndex + 1) % 4;
-    if (k === 'arrowup' || k === 'w') optionIndex = (optionIndex + 3) % 4;
+    if (k === 'arrowdown' || k === 's') optionIndex = (optionIndex + 1) % 7;
+    if (k === 'arrowup' || k === 'w') optionIndex = (optionIndex + 6) % 7;
     
     if (k === 'z' || k === 'enter' || k === ' ') {
       if (optionIndex === 0) bgTheme = 0;
       if (optionIndex === 1) bgTheme = 1;
       if (optionIndex === 2) bgTheme = 2;
-      if (optionIndex === 3) gameState = 'menu';
+      if (optionIndex === 3) autoFireEnabled = !autoFireEnabled;
+      if (optionIndex === 4) {
+          possessedMusicEnabled = !possessedMusicEnabled;
+          togglePossessedMusic(possessedMusicEnabled);
+      }
+      if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
+      if (optionIndex === 6) gameState = 'menu';
     }
   }
   
@@ -165,16 +247,12 @@ window.addEventListener('keydown', e => {
     }
   }
   
-  // --- AVANÇAR NÍVEL ---
+  // --- AVANÇAR NÍVEL / RESTART ---
   else if (gameState === 'levelCleared') {
     if (k === 'z' || k === 'enter' || k === ' ') {
-      if (currentLevel < 6) {
-        setupLevel(currentLevel + 1);
-      }
+      if (currentLevel < 6) setupLevel(currentLevel + 1);
     }
   }
-  
-  // --- REINICIAR / MENU (GAME OVER / WIN) ---
   else if (gameState === 'gameOver' || gameState === 'gameWin') {
     if (k === 'r') {
       gameState = 'menu';
@@ -185,6 +263,15 @@ window.addEventListener('keydown', e => {
 
 window.addEventListener('keyup', e => {
   keys[e.key.toLowerCase()] = false;
+});
+
+// CONTROLE POR MOUSE
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    mouseX = (e.clientX - rect.left) * scaleX;
+    mouseY = (e.clientY - rect.top) * scaleY;
 });
 
 // ==========================================
@@ -198,7 +285,7 @@ function update() {
     screenShake = 50;
     if (machineGunTimer <= 0) {
       machineGunEvent = 2;
-      machineGunTimer = 240; // 4 segundos
+      machineGunTimer = 240; 
     }
     return; 
   }
@@ -206,18 +293,24 @@ function update() {
   if (gameState !== 'playing') return;
   if (bombCooldown > 0) bombCooldown--;
 
-  // Movimento Jogador
-  if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
-  if (keys['arrowright'] || keys['d']) player.x += player.speed;
-  if (keys['arrowup'] || keys['w']) player.y -= player.speed;
-  if (keys['arrowdown'] || keys['s']) player.y += player.speed;
+  // Movimento Jogador (Teclado ou Mouse)
+  if (mouseControlEnabled) {
+      player.x += (mouseX - player.x) * 0.25;
+      player.y += (mouseY - player.y) * 0.25;
+  } else {
+      if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
+      if (keys['arrowright'] || keys['d']) player.x += player.speed;
+      if (keys['arrowup'] || keys['w']) player.y -= player.speed;
+      if (keys['arrowdown'] || keys['s']) player.y += player.speed;
+  }
+  
   player.x = Math.max(20, Math.min(W - 20, player.x));
   player.y = Math.max(20, Math.min(H - 20, player.y));
 
   if (player.cooldown > 0) player.cooldown--;
 
-  // Tiro do Jogador
-  if ((keys['z'] || keys[' ']) && player.cooldown <= 0) {
+  // Tiro do Jogador (Automático ou Tecla)
+  if ((keys['z'] || keys[' '] || autoFireEnabled) && player.cooldown <= 0) {
     playerBullets.push({ x: player.x, y: player.y - 20, r: 5, vy: -18, damage: 25 });
     player.cooldown = 4;
   }
@@ -255,13 +348,13 @@ function update() {
   }
 
   // Sorteio da Metralhadora Maluca
-  if (machineGunEvent === 0 && Math.random() < 0.0005) { // Chance levemente aumentada
+  if (machineGunEvent === 0 && Math.random() < 0.0005) { 
     machineGunEvent = 1;
     machineGunTimer = 120; 
     bullets = []; lasers = [];
   }
 
-  // Lógica da Metralhadora em Ação
+  // Lógica da Metralhadora
   if (machineGunEvent === 2) {
     machineGunTimer--;
     
@@ -276,7 +369,6 @@ function update() {
       }
     }
 
-    // CHUVA DE VIDAS EXTRAS (MUITO MAIS RÁPIDO)
     if (Math.random() < 0.8 && extraLives.length < 100) { 
       extraLives.push({
         x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30,
@@ -284,13 +376,12 @@ function update() {
       });
     }
 
-    // Coletar Vidas Extras
     for (let i = extraLives.length - 1; i >= 0; i--) {
       let el = extraLives[i];
       el.floatOffset += 0.1;
       let dx = el.x - player.x; let dy = el.y - player.y;
       if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) {
-        player.lives += 5; // CADA CORAÇÃO DÁ +5 VIDAS!
+        player.lives += 5; 
         extraLives.splice(i, 1);
       }
     }
@@ -394,17 +485,27 @@ function draw() {
     ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
-    ctx.fillText("OPÇÕES", W/2, 150);
+    ctx.fillText("OPÇÕES", W/2, 120);
 
-    ctx.font = 'bold 30px monospace';
-    ctx.fillStyle = optionIndex === 0 ? '#0f0' : '#fff';
-    ctx.fillText((optionIndex === 0 ? "> " : "") + "Fundo Original" + (bgTheme === 0 ? " [X]" : ""), W/2, 300);
-    ctx.fillStyle = optionIndex === 1 ? '#0f0' : '#fff';
-    ctx.fillText((optionIndex === 1 ? "> " : "") + "Fundo Preto" + (bgTheme === 1 ? " [X]" : ""), W/2, 380);
-    ctx.fillStyle = optionIndex === 2 ? '#0f0' : '#fff';
-    ctx.fillText((optionIndex === 2 ? "> " : "") + "Bandeira da China" + (bgTheme === 2 ? " [X]" : ""), W/2, 460);
-    ctx.fillStyle = optionIndex === 3 ? '#0f0' : '#fff';
-    ctx.fillText((optionIndex === 3 ? "> " : "") + "Voltar", W/2, 600);
+    const optionsList = [
+        "Fundo Original", "Fundo Preto", "Bandeira da China",
+        "Tiro Automatico", "Musica Possuida", "Controle por Mouse", "Voltar"
+    ];
+
+    ctx.font = 'bold 28px monospace';
+    
+    for (let i = 0; i < optionsList.length; i++) {
+        let text = optionsList[i];
+        if (i === 0 && bgTheme === 0) text += " [X]";
+        if (i === 1 && bgTheme === 1) text += " [X]";
+        if (i === 2 && bgTheme === 2) text += " [X]";
+        if (i === 3) text += autoFireEnabled ? " [ON]" : " [OFF]";
+        if (i === 4) text += possessedMusicEnabled ? " [ON]" : " [OFF]";
+        if (i === 5) text += mouseControlEnabled ? " [ON]" : " [OFF]";
+        
+        ctx.fillStyle = optionIndex === i ? '#0f0' : '#fff';
+        ctx.fillText((optionIndex === i ? "> " : "") + text, W/2, 220 + i * 60);
+    }
   } 
   
   // 3. Jogo
@@ -448,7 +549,7 @@ function draw() {
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // Vidas Extras (Corações gigantes)
+      // Vidas Extras
       if (machineGunEvent === 2) {
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let el of extraLives) {
@@ -482,7 +583,6 @@ function draw() {
       ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center";
       ctx.fillText(`TINTINTLEIRO - NÍVEL ${currentLevel}`, W/2, 70);
       
-      // HUD DE VIDAS INTELIGENTE (Se passar de 10, vira texto)
       ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
       if (player.lives > 10) {
           ctx.fillText(`VIDAS: ❤ x ${player.lives}`, 100, 120);
