@@ -10,7 +10,11 @@ Para usar qualquer um destes códigos, você precisa abrir o
 
 ---------------------------------------------------------
 1. DEUS MODE ABSOLUTO (Vida e Invulnerabilidade Infinita)
-Cole: player.lives = 9999; player.invulnerable = 9999999;
+Cole: const originalSetup = setupLevel;
+setupLevel = function(level) {
+    originalSetup(level);
+    player.lives = 99; // Força 99 vidas toda vez que um nível começar
+};
 
 2. ONE-HIT KILL (O Boss morre com um único tiro)
 Cole: boss.hp = 1;
