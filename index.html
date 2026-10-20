@@ -575,8 +575,183 @@ draw = function() {
 };
 // =========================================================
 
-// Inicializa o jogo normalmente
-initGame();
+// =========================================================
+// PATCH FINAL: MENU PRINCIPAL E OPÇÕES DE FUNDO
+// =========================================================
+let currentScreen = 'menu'; // 'menu', 'options', 'playing'
+let menuIndex = 0;
+let optionIndex = 0;
+let bgTheme = 0; // 0 = Original, 1 = Preto, 2 = Bandeira da China
+
+// Guardando as funções do patch anterior (Metralhadora)
+const mgUpdate = update;
+const mgDraw = draw;
+
+// Função para desenhar o fundo escolhido
+function drawMenuBackground() {
+    if (bgTheme === 0) {
+        ctx.drawImage(bgCanvas, 0, 0); // Fundo original chinês
+    } else if (bgTheme === 1) {
+        ctx.fillStyle = '#000000'; // Fundo Preto
+        ctx.fillRect(0, 0, W, H);
+    } else if (bgTheme === 2) {
+        ctx.fillStyle = '#DE2910'; // Vermelho da bandeira da China
+        ctx.fillRect(0, 0, W, H);
+        // Desenhando as estrelas amarelas da bandeira
+        ctx.fillStyle = '#FFDE00';
+        for(let i=0; i<15; i++) {
+            ctx.font = `bold ${20 + Math.random()*40}px Arial`;
+            ctx.fillText("★", Math.random()*W, Math.random()*H);
+        }
+    }
+}
+
+// SUBSTITUINDO O UPDATE
+update = function() {
+    if (currentScreen === 'menu') {
+        // Navegação do Menu
+        if (keys['arrowdown'] || keys['s']) { menuIndex = (menuIndex + 1) % 2; keys['arrowdown'] = false; keys['s'] = false; }
+        if (keys['arrowup'] || keys['w']) { menuIndex = (menuIndex + 1) % 2; keys['arrowup'] = false; keys['w'] = false; }
+        
+        // Selecionar
+        if (keys['enter'] || keys['z'] || keys[' ']) {
+            if (menuIndex === 0) {
+                currentScreen = 'playing';
+                initGame(); // Inicia o jogo de verdade
+            } else {
+                currentScreen = 'options';
+            }
+            keys['enter'] = false; keys['z'] = false; keys[' '] = false;
+        }
+        return; // Impede que o jogo rode no fundo
+    }
+
+    if (currentScreen === 'options') {
+        // Navegação das Opções
+        if (keys['arrowdown'] || keys['s']) { optionIndex = (optionIndex + 1) % 4; keys['arrowdown'] = false; keys['s'] = false; }
+        if (keys['arrowup'] || keys['w']) { optionIndex = (optionIndex + 1) % 4; keys['arrowup'] = false; keys['w'] = false; }
+        
+        // Trocar fundo
+        if (keys['enter'] || keys['z'] || keys[' ']) {
+            if (optionIndex === 0) bgTheme = 0;
+            if (optionIndex === 1) bgTheme = 1;
+            if (optionIndex === 2) bgTheme = 2;
+            if (optionIndex === 3) currentScreen = 'menu'; // Voltar
+            
+            // Delay para não bugar
+            keys['enter'] = false; keys['z'] = false; keys[' '] = false;
+        }
+        return;
+    }
+
+    // Se estiver jogando, roda a lógica normal (incluindo a Metralhadora)
+    mgUpdate();
+
+    // Atalho para voltar ao Menu se morrer ou vencer
+    if ((gameOver || gameWin) && keys['r']) {
+        currentScreen = 'menu';
+        keys['r'] = false;
+    }
+}
+
+// SUBSTITUINDO O DRAW
+draw = function() {
+    if (currentScreen === 'menu') {
+        drawMenuBackground();
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, W, H);
+        
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#f00';
+        ctx.font = 'bold 70px Impact, sans-serif';
+        ctx.fillText("TINTINTLEIRO", W/2, H/2 - 150);
+
+        ctx.font = 'bold 40px monospace';
+        
+        // Opção 1: Iniciar
+        ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff';
+        ctx.fillText(menuIndex === 0 ? "> INICIAR JOGO <" : "INICIAR JOGO", W/2, H/2);
+        
+        // Opção 2: Opções
+        ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff';
+        ctx.fillText(menuIndex === 1 ? "> OPÇÕES <" : "OPÇÕES", W/2, H/2 + 80);
+
+        ctx.fillStyle = '#ff0';
+        ctx.font = '20px monospace';
+        ctx.fillText("Use as Setas/WASD e aperte Z/Enter", W/2, H - 50);
+        return;
+    }
+
+    if (currentScreen === 'options') {
+        drawMenuBackground();
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 0, W, H);
+        
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#f00';
+        ctx.font = 'bold 50px Impact, sans-serif';
+        ctx.fillText("OPÇÕES", W/2, 150);
+
+        ctx.font = 'bold 30px monospace';
+        
+        // Fundo Original
+        ctx.fillStyle = optionIndex === 0 ? '#0f0' : '#fff';
+        ctx.fillText((optionIndex === 0 ? "> " : "") + "Fundo Original" + (bgTheme === 0 ? " [X]" : ""), W/2, 300);
+        
+        // Fundo Preto
+        ctx.fillStyle = optionIndex === 1 ? '#0f0' : '#fff';
+        ctx.fillText((optionIndex === 1 ? "> " : "") + "Fundo Preto" + (bgTheme === 1 ? " [X]" : ""), W/2, 380);
+        
+        // Fundo China
+        ctx.fillStyle = optionIndex === 2 ? '#0f0' : '#fff';
+        ctx.fillText((optionIndex === 2 ? "> " : "") + "Bandeira da China" + (bgTheme === 2 ? " [X]" : ""), W/2, 460);
+        
+        // Voltar
+        ctx.fillStyle = optionIndex === 3 ? '#0f0' : '#fff';
+        ctx.fillText((optionIndex === 3 ? "> " : "") + "Voltar", W/2, 600);
+
+        return;
+    }
+
+    // Se estiver jogando, roda o desenho normal (Metralhadora, Vidas, etc)
+    // Mas substitui o fundo original pelo tema escolhido!
+    if (currentScreen === 'playing') {
+        // Truque de mestre: Desenhamos o fundo escolhido ANTES do jogo rodar
+        drawMenuBackground(); 
+        
+        // Aqui chamamos o draw original, mas ele vai desenhar o bgCanvas por cima...
+        // Para evitar isso, a função mgDraw precisa ser adaptada.
+        mgDraw();
+    }
+}
+
+// Precisamos garantir que o fundo original não seja desenhado por cima se não for o tema 0
+// Vamos interceptar o desenho do bgCanvas
+const originalDrawImage = CanvasRenderingContext2D.prototype.drawImage;
+CanvasRenderingContext2D.prototype.drawImage = function(img, ...args) {
+    // Se estivermos jogando e o fundo NÃO for o original, ignoramos o bgCanvas
+    if (currentScreen === 'playing' && bgTheme !== 0 && img === bgCanvas) {
+        return; 
+    }
+    return originalDrawImage.apply(this, [img, ...args]);
+};
+
+// =========================================================
+// INICIANDO O JOGO PELO MENU
+// =========================================================
+// Removemos o startScreen antigo para usar o nosso Menu
+document.getElementById('startScreen').style.display = 'none';
+
+// Precisamos iniciar o áudio no primeiro clique (Política dos Navegadores)
+window.addEventListener('click', () => {
+    bgm = document.getElementById('bgm');
+    if (bgm && bgm.paused) {
+        bgm.volume = 0.4;
+        bgm.play().catch(e => console.log("Erro no áudio:", e));
+    }
+});
+
+// Inicia o Loop
 gameLoop();
 </script>
 </body>
