@@ -40,6 +40,11 @@ let bgTheme = 0;
 let autoFireEnabled = false;
 let possessedMusicEnabled = false;
 let mouseControlEnabled = false;
+let gameSpeed = 1.0; 
+
+// Variáveis do Efeito de Morte (Pitch Down)
+let isDying = false;
+let deathAudioTimer = 0;
 
 // ==========================================
 // SISTEMA DE SALVAR/CARREGAR CONFIGURAÇÕES
@@ -50,6 +55,7 @@ function loadSettings() {
     if (localStorage.getItem('tintintleiro_autoFire')) autoFireEnabled = localStorage.getItem('tintintleiro_autoFire') === 'true';
     if (localStorage.getItem('tintintleiro_possessedMusic')) possessedMusicEnabled = localStorage.getItem('tintintleiro_possessedMusic') === 'true';
     if (localStorage.getItem('tintintleiro_mouseControl')) mouseControlEnabled = localStorage.getItem('tintintleiro_mouseControl') === 'true';
+    if (localStorage.getItem('tintintleiro_gameSpeed')) gameSpeed = parseFloat(localStorage.getItem('tintintleiro_gameSpeed'));
 }
 
 function saveSettings() {
@@ -58,6 +64,7 @@ function saveSettings() {
     localStorage.setItem('tintintleiro_autoFire', autoFireEnabled);
     localStorage.setItem('tintintleiro_possessedMusic', possessedMusicEnabled);
     localStorage.setItem('tintintleiro_mouseControl', mouseControlEnabled);
+    localStorage.setItem('tintintleiro_gameSpeed', gameSpeed);
 }
 
 loadSettings();
@@ -69,7 +76,8 @@ const i18n = {
     en: {
         start: "START GAME", options: "OPTIONS", leaderboard: "LEADERBOARD", madeBy: "MADE BY NEUROKILLER",
         bgOrig: "Original Background", bgBlack: "Black Background", bgChina: "China Flag",
-        autoFire: "Auto Fire", possessedMusic: "Possessed Music", mouseCtrl: "Mouse Control", back: "Back",
+        autoFire: "Auto Fire", possessedMusic: "Possessed Music", mouseCtrl: "Mouse Control", 
+        gameSpeed: "Game Speed", back: "Back", useArrows: "< > to change",
         rankTitle: "🏆 TIME LEADERBOARD 🏆", name: "NAME", time: "TIME", wins: "WINS",
         loading: "Loading...", noRecords: "No records yet...", configApi: "Configure JSONBin in code.", return: "Tap / Press Z to return",
         youWin: "YOU WIN", survived: "YOU SURVIVED HELL!", youDied: "YOU DIED",
@@ -80,7 +88,8 @@ const i18n = {
     pt: {
         start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
         bgOrig: "Fundo Original", bgBlack: "Fundo Preto", bgChina: "Bandeira da China",
-        autoFire: "Tiro Automatico", possessedMusic: "Musica Possuida", mouseCtrl: "Controle por Mouse", back: "Voltar",
+        autoFire: "Tiro Automatico", possessedMusic: "Musica Possuida", mouseCtrl: "Controle por Mouse", 
+        gameSpeed: "Velocidade", back: "Voltar", useArrows: "< > para mudar",
         rankTitle: "🏆 RANKING DE TEMPO 🏆", name: "NOME", time: "TEMPO", wins: "VITÓRIAS",
         loading: "Carregando...", noRecords: "Nenhum registro ainda...", configApi: "Configure o JSONBin no código.", return: "Toque / Aperte Z para voltar",
         youWin: "VITÓRIA", survived: "VOCÊ VENCEU O INFERNO!", youDied: "VOCÊ MORREU",
@@ -91,7 +100,8 @@ const i18n = {
     cn: {
         start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
         bgOrig: "原始背景", bgBlack: "黑色背景", bgChina: "中国国旗",
-        autoFire: "自动射击", possessedMusic: "恶魔音乐", mouseCtrl: "鼠标控制", back: "返回",
+        autoFire: "自动射击", possessedMusic: "恶魔音乐", mouseCtrl: "鼠标控制", 
+        gameSpeed: "游戏速度", back: "返回", useArrows: "< > 更改",
         rankTitle: "🏆 时间排行榜 🏆", name: "名字", time: "时间", wins: "胜利",
         loading: "加载中...", noRecords: "暂无记录...", configApi: "在代码中配置JSONBin。", return: "点击 / 按Z返回",
         youWin: "胜利", survived: "你在地狱中幸存！", youDied: "你死了",
@@ -163,7 +173,6 @@ function generateBackground() {
     bgCtx.font = `bold ${size}px "Noto Sans CJK SC", sans-serif`;
     bgCtx.fillText(text, x, y);
   }
-
   for (let i = 0; i < 25; i++) {
     chinaStars.push({ x: Math.random() * W, y: Math.random() * H, size: 20 + Math.random() * 30 });
   }
@@ -184,20 +193,14 @@ async function fetchLeaderboard() {
     const data = await res.json();
     leaderboardData = data.record.leaderboard || [];
     leaderboardData.sort((a, b) => (a.tempo || 999999) - (b.tempo || 999999));
-  } catch (e) {
-    console.error("Error fetching leaderboard:", e);
-    leaderboardData = [];
-  }
+  } catch (e) { leaderboardData = []; }
 }
 
 async function saveScore(nome, tempo) {
   if (isSavingScore || JSONBIN_BIN_ID.includes("COLE_AQUI")) return;
   isSavingScore = true;
-  
   try {
-    const getRes = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-      headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
-    });
+    const getRes = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, { headers: { 'X-Master-Key': JSONBIN_MASTER_KEY } });
     const getData = await getRes.json();
     let lb = getData.record.leaderboard || [];
     
@@ -210,42 +213,49 @@ async function saveScore(nome, tempo) {
     }
     
     lb.sort((a, b) => (a.tempo || 999999) - (b.tempo || 999999));
-    
     await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': JSONBIN_MASTER_KEY
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
       body: JSON.stringify({ leaderboard: lb })
     });
-    
     leaderboardData = lb;
-  } catch (e) {
-    console.error("Error saving score:", e);
-  } finally {
-    isSavingScore = false;
-  }
+  } catch (e) { } finally { isSavingScore = false; }
 }
 
 // ==========================================
-// ÁUDIO
+// ÁUDIO E VELOCIDADE
 // ==========================================
+function updateAudioSpeed() {
+    if (isDying) return; // Se estiver morrendo, a função de morte controla o áudio
+
+    const safeSpeed = Math.min(gameSpeed, 16); 
+    if (bgm && !possessedMusicEnabled) {
+        bgm.preservesPitch = true;
+        bgm.playbackRate = safeSpeed;
+    }
+    if (possessedSource && possessedMusicEnabled) {
+        possessedSource.playbackRate.value = safeSpeed;
+    }
+}
+
 function playAudio() {
   if (bgm && bgm.paused && !possessedMusicEnabled) {
     bgm.volume = 0.4;
     bgm.play().catch(e => console.log("Audio blocked:", e));
+    updateAudioSpeed();
   }
 }
 
 function triggerGlitchAudio() {
   if (!bgm || possessedMusicEnabled) return;
-  try { bgm.playbackRate = 2.5; bgm.preservesPitch = false; } catch (e) { console.error(e); }
+  try { bgm.playbackRate = 2.5; bgm.preservesPitch = false; } catch (e) { }
 }
 
 function resetAudio() {
   if (!bgm) return;
-  try { bgm.playbackRate = 1.0; bgm.preservesPitch = true; } catch (e) { console.error(e); }
+  isDying = false;
+  deathAudioTimer = 0;
+  try { bgm.preservesPitch = true; updateAudioSpeed(); } catch (e) { }
 }
 
 function togglePossessedMusic(enabled) {
@@ -272,11 +282,12 @@ function togglePossessedMusic(enabled) {
                     reversedBuffer = rev;
                     playReversed();
                 })
-                .catch(e => { bgm.playbackRate = 2.5; bgm.preservesPitch = false; bgm.play(); });
+                .catch(e => { bgm.preservesPitch = false; updateAudioSpeed(); bgm.play(); });
         } else playReversed();
     } else {
         if (possessedSource) { possessedSource.stop(); possessedSource = null; }
-        bgm.playbackRate = 1.0; bgm.preservesPitch = true; bgm.play();
+        updateAudioSpeed();
+        bgm.play();
     }
 }
 
@@ -285,8 +296,15 @@ function playReversed() {
     possessedSource = audioCtx.createBufferSource();
     possessedSource.buffer = reversedBuffer;
     possessedSource.loop = true;
+    updateAudioSpeed();
     possessedSource.connect(audioCtx.destination);
     possessedSource.start();
+}
+
+function startDeathEffect() {
+    isDying = true;
+    deathAudioTimer = 0;
+    if (bgm) bgm.preservesPitch = false; // Permite o pitch down
 }
 
 // ==========================================
@@ -330,6 +348,20 @@ function toggleLanguage() {
     saveSettings();
 }
 
+function changeGameSpeed(dir) {
+    if (dir > 0) { // Aumentar
+        if (gameSpeed < 1) gameSpeed = Math.min(1, parseFloat((gameSpeed + 0.05).toFixed(2)));
+        else if (gameSpeed >= 1 && gameSpeed < 10) gameSpeed = Math.min(10, gameSpeed + 1);
+        else gameSpeed = Math.min(99, gameSpeed + 5);
+    } else { // Diminuir
+        if (gameSpeed <= 1) gameSpeed = Math.max(0.05, parseFloat((gameSpeed - 0.05).toFixed(2)));
+        else if (gameSpeed > 1 && gameSpeed <= 10) gameSpeed = Math.max(1, gameSpeed - 1);
+        else gameSpeed = Math.max(10, gameSpeed - 5);
+    }
+    saveSettings();
+    updateAudioSpeed();
+}
+
 function handleAction(action) {
     if (gameState === 'menu') {
         if (action === 'up') menuIndex = (menuIndex + 2) % 3;
@@ -340,8 +372,9 @@ function handleAction(action) {
             else if (menuIndex === 2) { gameState = 'leaderboard'; fetchLeaderboard(); }
         }
     } else if (gameState === 'options') {
-        if (action === 'down') optionIndex = (optionIndex + 1) % 7;
-        if (action === 'up') optionIndex = (optionIndex + 6) % 7;
+        if (action === 'down') optionIndex = (optionIndex + 1) % 8;
+        if (action === 'up') optionIndex = (optionIndex + 7) % 8;
+        
         if (action === 'select') {
             if (optionIndex === 0) bgTheme = 0;
             if (optionIndex === 1) bgTheme = 1;
@@ -352,7 +385,14 @@ function handleAction(action) {
                 togglePossessedMusic(possessedMusicEnabled); 
             }
             if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
-            if (optionIndex === 6) gameState = 'menu';
+            if (optionIndex === 6) { // No celular ou controle, o clique na velocidade cicla os valores
+                const speeds = [1, 2, 5, 10, 25, 50, 99, 0.5, 0.05];
+                let idx = speeds.indexOf(gameSpeed);
+                if (idx === -1) idx = 0;
+                gameSpeed = speeds[(idx + 1) % speeds.length];
+                updateAudioSpeed();
+            }
+            if (optionIndex === 7) gameState = 'menu';
             
             saveSettings();
         }
@@ -361,9 +401,7 @@ function handleAction(action) {
     } else if (gameState === 'levelCleared') {
         if (action === 'select' && currentLevel < 6) setupLevel(currentLevel + 1);
     } else if (gameState === 'gameOver' || gameState === 'gameWin') {
-        if (action === 'select') { 
-            window.location.reload(); 
-        }
+        if (action === 'select') { window.location.reload(); }
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
             bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
@@ -388,6 +426,13 @@ window.addEventListener('keydown', e => {
       }
     } else if (k === 'backspace') playerNameInput = playerNameInput.slice(0, -1);
     else if (k.length === 1 && /^[a-zA-Z0-9 ]$/.test(k) && playerNameInput.length < 12) playerNameInput += k;
+  } else if (gameState === 'options' && optionIndex === 6) {
+      // Ajustar velocidade com setas enquanto está na opção
+      if (k === 'arrowleft' || k === 'a') changeGameSpeed(-1);
+      if (k === 'arrowright' || k === 'd') changeGameSpeed(1);
+      if (k === 'arrowup' || k === 'w') handleAction('up');
+      if (k === 'arrowdown' || k === 's') handleAction('down');
+      if (k === 'z' || k === 'enter' || k === ' ') handleAction('select');
   } else {
     if (k === 'arrowup' || k === 'w') handleAction('up');
     if (k === 'arrowdown' || k === 's') handleAction('down');
@@ -412,14 +457,8 @@ canvas.addEventListener('pointerdown', e => {
     isDragging = true;
     targetX = pos.x; targetY = pos.y;
 
-    if (possessedMusicEnabled && audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-
-    if (pos.x > W - 150 && pos.y < 60) {
-        toggleLanguage();
-        return;
-    }
+    if (possessedMusicEnabled && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (pos.x > W - 150 && pos.y < 60) { toggleLanguage(); return; }
 
     if (isMobile) {
         if (gameState === 'menu') {
@@ -427,8 +466,17 @@ canvas.addEventListener('pointerdown', e => {
             else if (pos.y > H/2 && pos.y < H/2 + 60) { menuIndex = 1; handleAction('select'); }
             else if (pos.y > H/2 + 70 && pos.y < H/2 + 130) { menuIndex = 2; handleAction('select'); }
         } else if (gameState === 'options') {
-            for(let i=0; i<7; i++) {
-                if (pos.y > 200 + i*60 && pos.y < 250 + i*60) { optionIndex = i; handleAction('select'); }
+            for(let i=0; i<8; i++) {
+                // Se clicar na opção de velocidade, divide a tela pra aumentar ou diminuir
+                if (pos.y > 180 + i*50 && pos.y < 230 + i*50) { 
+                    optionIndex = i;
+                    if (i === 6) {
+                        if (pos.x < W / 2) changeGameSpeed(-1);
+                        else changeGameSpeed(1);
+                    } else {
+                        handleAction('select'); 
+                    }
+                }
             }
         } else if (gameState === 'leaderboard' || gameState === 'levelCleared' || gameState === 'gameOver' || gameState === 'gameWin') {
             handleAction('select');
@@ -442,7 +490,6 @@ canvas.addEventListener('pointermove', e => {
     const pos = getPointerPos(e);
     targetX = pos.x; targetY = pos.y;
 });
-
 canvas.addEventListener('pointerup', () => isDragging = false);
 canvas.addEventListener('pointercancel', () => isDragging = false);
 
@@ -450,10 +497,22 @@ canvas.addEventListener('pointercancel', () => isDragging = false);
 // UPDATE (LÓGICA)
 // ==========================================
 function update() {
-  if (gameState !== 'playing') {
-      screenShake = 0; 
+  // Efeito de Morte (Pitch Down)
+  if (isDying) {
+      deathAudioTimer++;
+      let rate = Math.max(0.05, (gameSpeed * 0.5) - (deathAudioTimer * 0.015));
+      if (bgm && !possessedMusicEnabled) bgm.playbackRate = rate;
+      if (possessedSource && possessedMusicEnabled) possessedSource.playbackRate.value = rate;
+      
+      if (deathAudioTimer > 150) {
+          if (bgm) bgm.pause();
+          if (possessedSource) possessedSource.stop();
+          isDying = false;
+      }
+      return;
   }
 
+  if (gameState !== 'playing') screenShake = 0; 
   if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
 
   if (machineGunEvent === 1) {
@@ -463,11 +522,10 @@ function update() {
   }
   
   if (gameState !== 'playing') return;
-  
   if (bombCooldown > 0) bombCooldown--;
   if (screenShake > 0) screenShake--; 
 
-  currentRunTime = (performance.now() - gameStartTime) / 1000;
+  currentRunTime = ((performance.now() - gameStartTime) / 1000) * gameSpeed;
 
   if (isMobile || mouseControlEnabled) {
       player.x += (targetX - player.x) * 0.4;
@@ -481,7 +539,6 @@ function update() {
   
   player.x = Math.max(20, Math.min(W - 20, player.x));
   player.y = Math.max(20, Math.min(H - 20, player.y));
-
   if (player.cooldown > 0) player.cooldown--;
 
   if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) {
@@ -549,11 +606,8 @@ function update() {
         boss.hp = 0; 
         if (currentLevel === 6) { 
             finalRunTime = currentRunTime;
-            gameState = 'nameInput'; 
-            playerNameInput = ""; 
-        } else { 
-            gameState = 'levelCleared'; 
-        }
+            gameState = 'nameInput'; playerNameInput = ""; 
+        } else { gameState = 'levelCleared'; }
         triggerGlitchAudio(); 
       }
     } else if (pb.y < 0) playerBullets.splice(i, 1);
@@ -566,9 +620,10 @@ function update() {
     let dx = b.x - player.x; let dy = b.y - player.y;
     if (invulnerable <= 0 && dx*dx + dy*dy < (b.r + player.r)*(b.r + player.r)) {
       player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-      if (player.lives <= 0) {
-          gameState = 'gameOver';
+      if (player.lives <= 0) { 
+          gameState = 'gameOver'; 
           screenShake = 0; 
+          startDeathEffect(); // Ativa o pitch down!
       }
       break;
     }
@@ -583,9 +638,10 @@ function update() {
       let dist = Math.abs((player.x - boss.x) * Math.sin(l.angle) - (player.y - boss.y) * Math.cos(l.angle));
       if (dist < 25) {
         player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-        if (player.lives <= 0) {
-            gameState = 'gameOver';
+        if (player.lives <= 0) { 
+            gameState = 'gameOver'; 
             screenShake = 0; 
+            startDeathEffect(); // Ativa o pitch down!
         }
       }
     }
@@ -598,7 +654,6 @@ function update() {
 // ==========================================
 function draw() {
   ctx.save();
-  
   if (screenShake > 0 && gameState === 'playing') {
       ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
   }
@@ -609,16 +664,13 @@ function draw() {
     ctx.fillStyle = '#DE2910'; ctx.fillRect(-50, -50, W + 100, H + 100);
     ctx.fillStyle = '#FFDE00';
     for(let i=0; i<chinaStars.length; i++) {
-        let s = chinaStars[i];
-        ctx.font = `bold ${s.size}px Arial`;
-        ctx.fillText("★", s.x, s.y);
+        let s = chinaStars[i]; ctx.font = `bold ${s.size}px Arial`; ctx.fillText("★", s.x, s.y);
     }
   }
 
   // Botão de Idioma
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(W - 140, 10, 130, 40);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(W - 140, 10, 130, 40);
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(W - 140, 10, 130, 40);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center';
   let flag = lang === 'en' ? "EN 🇺🇸" : lang === 'pt' ? "PT 🇧🇷" : "CN 🇨🇳";
@@ -646,14 +698,14 @@ function draw() {
     ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
-    ctx.fillText(t('options'), W/2, 120);
+    ctx.fillText(t('options'), W/2, 100);
 
     const optionsList = [
         t('bgOrig'), t('bgBlack'), t('bgChina'), 
-        t('autoFire'), t('possessedMusic'), t('mouseCtrl'), t('back')
+        t('autoFire'), t('possessedMusic'), t('mouseCtrl'), t('gameSpeed'), t('back')
     ];
     
-    ctx.font = 'bold 28px monospace';
+    ctx.font = 'bold 26px monospace';
     for (let i = 0; i < optionsList.length; i++) {
         let text = optionsList[i];
         if (i === 0 && bgTheme === 0) text += " [X]";
@@ -662,8 +714,15 @@ function draw() {
         if (i === 3) text += autoFireEnabled ? " [ON]" : " [OFF]";
         if (i === 4) text += possessedMusicEnabled ? " [ON]" : " [OFF]";
         if (i === 5) text += mouseControlEnabled ? " [ON]" : " [OFF]";
+        if (i === 6) text += ` [ ${gameSpeed.toFixed(2)}x ]`;
         ctx.fillStyle = optionIndex === i ? '#0f0' : '#fff';
-        ctx.fillText((optionIndex === i ? "> " : "") + text, W/2, 220 + i * 60);
+        ctx.fillText((optionIndex === i ? "> " : "") + text, W/2, 180 + i * 50);
+    }
+    
+    // Dica extra se estiver na opção de velocidade
+    if (optionIndex === 6) {
+        ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace';
+        ctx.fillText(t('useArrows'), W/2, 590);
     }
   } 
   else if (gameState === 'leaderboard') {
@@ -672,9 +731,7 @@ function draw() {
     ctx.fillText(t('rankTitle'), W/2, 100);
     
     ctx.font = 'bold 20px monospace'; ctx.fillStyle = '#fff';
-    ctx.fillText(t('name'), W/2 - 200, 160); 
-    ctx.fillText(t('time'), W/2, 160); 
-    ctx.fillText(t('wins'), W/2 + 200, 160);
+    ctx.fillText(t('name'), W/2 - 200, 160); ctx.fillText(t('time'), W/2, 160); ctx.fillText(t('wins'), W/2 + 200, 160);
     
     ctx.font = '20px monospace';
     if (JSONBIN_BIN_ID.includes("COLE_AQUI")) { ctx.fillStyle = '#ff0'; ctx.fillText(t('configApi'), W/2, 300); }
@@ -684,7 +741,6 @@ function draw() {
             let entry = leaderboardData[i]; let y = 210 + i * 45;
             ctx.fillStyle = i === 0 ? '#ff0' : '#fff';
             let timeStr = entry.tempo ? entry.tempo.toFixed(2) + "s" : "--";
-            
             ctx.textAlign = "left"; ctx.fillText(entry.nome, W/2 - 250, y);
             ctx.textAlign = "center"; ctx.fillText(timeStr, W/2, y);
             ctx.textAlign = "right"; ctx.fillText(entry.vitorias, W/2 + 250, y);
@@ -697,10 +753,8 @@ function draw() {
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
     ctx.fillText(t('survived'), W/2, H/2 - 140);
-    
     ctx.fillStyle = '#0ff'; ctx.font = 'bold 40px monospace';
     ctx.fillText(`${t('timeLabel')} ${finalRunTime.toFixed(2)}s`, W/2, H/2 - 60);
-
     ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; 
     ctx.fillText(t('yourName'), W/2, H/2);
     ctx.strokeStyle = '#0f0'; ctx.lineWidth = 3; ctx.strokeRect(W/2 - 200, H/2 + 20, 400, 60);
@@ -710,8 +764,6 @@ function draw() {
     ctx.fillStyle = '#fff'; ctx.font = '20px monospace'; 
     ctx.fillText(t('enterName'), W/2, H/2 + 120);
   }
-  
-  // Jogo
   else {
     if (gameState !== 'gameOver' && gameState !== 'gameWin') {
       ctx.save(); ctx.translate(boss.x, boss.y);
@@ -775,6 +827,11 @@ function draw() {
       if (player.lives > 10) ctx.fillText(`${t('lives')} ❤ x ${player.lives}`, 100, 120);
       else ctx.fillText(t('lives') + " " + "❤".repeat(player.lives), 100, 120);
       ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('bombs')} ${bombs} [X]`, 100, 150);
+      
+      if (gameSpeed !== 1.0) {
+          ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace';
+          ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160);
+      }
     }
 
     if (machineGunEvent === 1) {
@@ -807,30 +864,30 @@ function draw() {
 }
 
 // ==========================================
-// HOTFIX: FIXED TIMESTEP (O FIM DA VELOCIDADE ALTERADA)
+// GAME LOOP COM FIXED TIMESTEP E VELOCIDADE
 // ==========================================
 let lastTime = performance.now();
 let accumulator = 0;
-const TIME_STEP = 1000 / 60; // O jogo sempre roda a 60 "ticks" de lógica por segundo
+const TIME_STEP = 1000 / 60; 
 
 function gameLoop(currentTime) {
   if (!currentTime) currentTime = performance.now();
   let deltaTime = currentTime - lastTime;
   lastTime = currentTime;
   
-  // Se a janela perder o foco (ex: trocar de aba), o deltaTime fica gigante.
-  // Nós limitamos a 100ms para o Boss não teleportar pela tela ao voltar.
   if (deltaTime > 100) deltaTime = 100; 
   
-  accumulator += deltaTime;
+  // Multiplicador de velocidade do jogo
+  accumulator += deltaTime * gameSpeed;
   
-  // Roda a lógica do jogo travada em 60fps, não importa se seu monitor é de 165Hz
+  let updates = 0;
   while (accumulator >= TIME_STEP) {
       update();
       accumulator -= TIME_STEP;
+      updates++;
+      if (updates > 500) { accumulator = 0; break; }
   }
   
-  // O desenho roda o mais rápido que o monitor permitir (165Hz, 144Hz, 60Hz)
   draw();
   requestAnimationFrame(gameLoop);
 }
