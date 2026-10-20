@@ -102,7 +102,6 @@ let machineGunTimer = 0;
 let gameStartTime = 0;
 let currentRunTime = 0;
 let finalRunTime = 0;
-let permanentShake = 0;
 
 let bgTheme = 0; 
 let autoFireEnabled = false;
@@ -271,7 +270,8 @@ function setupLevel(level) {
   bullets = []; playerBullets = []; lasers = [];
   
   gameState = 'playing'; 
-  invulnerable = 0; screenShake = 0;
+  invulnerable = 0; 
+  screenShake = 0; // Garante que o tremor zera ao começar
   bombs = 3; bombCooldown = 0;
   machineGunEvent = 0; machineGunTimer = 0;
   extraLives = [];
@@ -281,7 +281,6 @@ function setupLevel(level) {
   
   if (level === 1) {
       gameStartTime = performance.now();
-      permanentShake = 0;
   }
 }
 
@@ -325,7 +324,7 @@ function handleAction(action) {
         if (action === 'select') { 
             gameState = 'menu'; 
             resetAudio(); 
-            permanentShake = 0; // CORREÇÃO DO TREMOR INFINITO AQUI
+            screenShake = 0; // MATA O TREMOR PRA SEMPRE AQUI
         }
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
@@ -340,7 +339,6 @@ window.addEventListener('keydown', e => {
   if (keys[k]) return; 
   keys[k] = true;
   
-  // Atalho para trocar idioma (L)
   if (k === 'l') toggleLanguage();
   
   if (gameState === 'nameInput') {
@@ -376,7 +374,6 @@ canvas.addEventListener('pointerdown', e => {
     isDragging = true;
     targetX = pos.x; targetY = pos.y;
 
-    // Clique no botão de idioma (Canto superior direito)
     if (pos.x > W - 150 && pos.y < 60) {
         toggleLanguage();
         return;
@@ -411,6 +408,11 @@ canvas.addEventListener('pointercancel', () => isDragging = false);
 // UPDATE (LÓGICA)
 // ==========================================
 function update() {
+  // Trava de segurança máxima: Se não estiver jogando, o tremor DEVE ser zero.
+  if (gameState !== 'playing') {
+      screenShake = 0;
+  }
+
   if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
 
   if (machineGunEvent === 1) {
@@ -418,8 +420,11 @@ function update() {
     if (machineGunTimer <= 0) { machineGunEvent = 2; machineGunTimer = 240; }
     return; 
   }
+  
   if (gameState !== 'playing') return;
+  
   if (bombCooldown > 0) bombCooldown--;
+  if (screenShake > 0) screenShake--; // Isso agora só roda durante o jogo
 
   currentRunTime = (performance.now() - gameStartTime) / 1000;
 
@@ -491,7 +496,6 @@ function update() {
   }
 
   if (invulnerable > 0) invulnerable--;
-  if (screenShake > 0) screenShake--;
 
   for (let i = playerBullets.length - 1; i >= 0; i--) {
     let pb = playerBullets[i];
@@ -523,7 +527,7 @@ function update() {
       player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
       if (player.lives <= 0) {
           gameState = 'gameOver';
-          permanentShake = 0; // Desativando o tremor excessivo pós-morte
+          screenShake = 0; // Zera na hora da morte
       }
       break;
     }
@@ -540,7 +544,7 @@ function update() {
         player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
         if (player.lives <= 0) {
             gameState = 'gameOver';
-            permanentShake = 0;
+            screenShake = 0; // Zera na hora da morte
         }
       }
     }
@@ -554,8 +558,8 @@ function update() {
 function draw() {
   ctx.save();
   
-  // Shake normal no jogo
-  if (screenShake > 0) {
+  // O TREMOR SÓ ACONTECE SE ESTIVER JOGANDO (gameState === 'playing')
+  if (screenShake > 0 && gameState === 'playing') {
       ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
   }
 
@@ -568,7 +572,7 @@ function draw() {
     for(let i=0; i<25; i++) { ctx.font = `bold ${20 + Math.random()*30}px Arial`; ctx.fillText("★", Math.random()*W, Math.random()*H); }
   }
 
-  // Botão de Idioma (Sempre Visível)
+  // Botão de Idioma
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(W - 140, 10, 130, 40);
@@ -741,7 +745,10 @@ function draw() {
 
     if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
-      ctx.save(); ctx.translate(Math.random()*20-10, Math.random()*20-10); ctx.textAlign = 'center';
+      
+      // REMOVIDO O TREMOR DO TEXTO AQUI
+      ctx.textAlign = 'center';
+      
       if (gameState === 'levelCleared') {
         ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText(t('youWin'), W/2, H/2 - 100);
         for(let i=0; i<20; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff'; ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`; ctx.fillText(t('youWin'), Math.random()*W, Math.random()*H); }
@@ -754,7 +761,6 @@ function draw() {
         ctx.fillStyle = '#f00'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText(t('youDied'), W/2, H/2 - 50);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('return'), W/2, H/2 + 50);
       }
-      ctx.restore();
     }
   }
   ctx.restore();
