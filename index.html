@@ -29,7 +29,7 @@
 const JSONBIN_BIN_ID = "6ad6f8e9ffd5d160537aed8b";
 const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97qr4/5yqfS";
 
-let leaderboardData = []; // Armazena o histórico puro de vitórias
+let leaderboardData = []; 
 let isSavingScore = false;
 let leaderboardTab = 0; // 0 = Menor Tempo, 1 = Mais Vitórias
 
@@ -43,8 +43,7 @@ let possessedMusicEnabled = false;
 let mouseControlEnabled = false;
 let gameSpeed = 1.0; 
 
-// Variáveis de Controle do Jogo
-let machineGunCount = 0; // NOVO: Conta quantas metralhadoras apareceram
+let machineGunCount = 0; 
 let isDying = false;
 let deathAudioTimer = 0;
 
@@ -79,7 +78,7 @@ const i18n = {
         start: "START GAME", options: "OPTIONS", leaderboard: "LEADERBOARD", madeBy: "MADE BY NEUROKILLER",
         bgOrig: "Original Background", bgBlack: "Black Background", bgChina: "China Flag",
         autoFire: "Auto Fire", possessedMusic: "Possessed Music", mouseCtrl: "Mouse Control", 
-        gameSpeed: "Game Speed", back: "Back", useArrows: "< > to change",
+        gameSpeed: "Game Speed", back: "Back", useArrows: "< Hold > to change",
         tabFast: "FASTEST TIME", tabWins: "MOST WINS",
         name: "NAME", time: "TIME", speed: "SPEED", mGuns: "M.GUNS", date: "DATE", wins: "WINS",
         loading: "Loading...", noRecords: "No records yet...", configApi: "Configure JSONBin in code.", return: "Tap / Press Z to return",
@@ -92,7 +91,7 @@ const i18n = {
         start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
         bgOrig: "Fundo Original", bgBlack: "Fundo Preto", bgChina: "Bandeira da China",
         autoFire: "Tiro Automatico", possessedMusic: "Musica Possuida", mouseCtrl: "Controle por Mouse", 
-        gameSpeed: "Velocidade", back: "Voltar", useArrows: "< > para mudar",
+        gameSpeed: "Velocidade", back: "Voltar", useArrows: "< Segure > para mudar",
         tabFast: "MENOR TEMPO", tabWins: "MAIS VITÓRIAS",
         name: "NOME", time: "TEMPO", speed: "VELOC.", mGuns: "METRA.", date: "DATA", wins: "VITÓRIAS",
         loading: "Carregando...", noRecords: "Nenhum registro ainda...", configApi: "Configure o JSONBin no código.", return: "Toque / Aperte Z para voltar",
@@ -105,7 +104,7 @@ const i18n = {
         start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
         bgOrig: "原始背景", bgBlack: "黑色背景", bgChina: "中国国旗",
         autoFire: "自动射击", possessedMusic: "恶魔音乐", mouseCtrl: "鼠标控制", 
-        gameSpeed: "游戏速度", back: "返回", useArrows: "< > 更改",
+        gameSpeed: "游戏速度", back: "返回", useArrows: "< 按住 > 更改",
         tabFast: "最短时间", tabWins: "最多胜利",
         name: "名字", time: "时间", speed: "速度", mGuns: "机枪", date: "日期", wins: "胜利",
         loading: "加载中...", noRecords: "暂无记录...", configApi: "在代码中配置JSONBin。", return: "点击 / 按Z返回",
@@ -196,10 +195,7 @@ async function fetchLeaderboard() {
       headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
     });
     const data = await res.json();
-    // Esperamos um array de objetos: { nome, tempo, velocidade, metralhas, data }
     leaderboardData = data.record.leaderboard || [];
-    
-    // Ordena o padrão para Menor Tempo
     leaderboardData.sort((a, b) => (a.tempo || 999999) - (b.tempo || 999999));
   } catch (e) { 
     console.error("Erro ao buscar:", e);
@@ -218,13 +214,11 @@ async function saveScore(nome, tempo, speed, mguns) {
     const getData = await getRes.json();
     let lb = getData.record.leaderboard || [];
     
-    // Formata a data atual baseada no idioma (ex: 20/10/2023, 14:30)
     let dateStr = new Date().toLocaleString(
         lang === 'pt' ? 'pt-BR' : (lang === 'cn' ? 'zh-CN' : 'en-US'), 
         { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }
     );
 
-    // Adiciona o novo registro na lista
     lb.push({ 
         nome: nome, 
         tempo: tempo, 
@@ -233,10 +227,8 @@ async function saveScore(nome, tempo, speed, mguns) {
         data: dateStr 
     });
     
-    // Mantém o arquivo JSON ordenado por tempo para facilitar a leitura
     lb.sort((a, b) => (a.tempo || 999999) - (b.tempo || 999999));
     
-    // Se o JSON ficar muito grande, limita a 1000 registros para não travar o JSONBin
     if (lb.length > 1000) lb = lb.slice(0, 1000);
 
     await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
@@ -359,7 +351,7 @@ function setupLevel(level) {
   
   if (level === 1) {
       gameStartTime = performance.now();
-      machineGunCount = 0; // Reseta o contador de metralhas
+      machineGunCount = 0; 
   }
 }
 
@@ -376,14 +368,11 @@ function toggleLanguage() {
 }
 
 function changeGameSpeed(dir) {
+    // Agora vai de 0.05 em 0.05 direto, sem saltos
     if (dir > 0) { 
-        if (gameSpeed < 1) gameSpeed = Math.min(1, parseFloat((gameSpeed + 0.05).toFixed(2)));
-        else if (gameSpeed >= 1 && gameSpeed < 10) gameSpeed = Math.min(10, gameSpeed + 1);
-        else gameSpeed = Math.min(99, gameSpeed + 5);
+        gameSpeed = Math.min(99.00, parseFloat((gameSpeed + 0.05).toFixed(2)));
     } else { 
-        if (gameSpeed <= 1) gameSpeed = Math.max(0.05, parseFloat((gameSpeed - 0.05).toFixed(2)));
-        else if (gameSpeed > 1 && gameSpeed <= 10) gameSpeed = Math.max(1, gameSpeed - 1);
-        else gameSpeed = Math.max(10, gameSpeed - 5);
+        gameSpeed = Math.max(0.05, parseFloat((gameSpeed - 0.05).toFixed(2)));
     }
     saveSettings();
     updateAudioSpeed();
@@ -413,11 +402,8 @@ function handleAction(action) {
             }
             if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
             if (optionIndex === 6) {
-                const speeds = [1, 2, 5, 10, 25, 50, 99, 0.5, 0.05];
-                let idx = speeds.indexOf(gameSpeed);
-                if (idx === -1) idx = 0;
-                gameSpeed = speeds[(idx + 1) % speeds.length];
-                updateAudioSpeed();
+                // No celular ou toque, clicar incrementa
+                changeGameSpeed(1);
             }
             if (optionIndex === 7) gameState = 'menu';
             
@@ -441,6 +427,13 @@ function handleAction(action) {
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'backspace'].includes(k)) e.preventDefault();
+  
+  // AQUI ESTÁ A MÁGICA: Permite segurar a seta na velocidade sem precisar clicar várias vezes
+  if (gameState === 'options' && optionIndex === 6) {
+      if (k === 'arrowleft' || k === 'a') { changeGameSpeed(-1); return; }
+      if (k === 'arrowright' || k === 'd') { changeGameSpeed(1); return; }
+  }
+
   if (keys[k]) return; 
   keys[k] = true;
   
@@ -451,18 +444,12 @@ window.addEventListener('keydown', e => {
       if (playerNameInput.trim().length > 0 && !isSavingScore) { 
           saveScore(playerNameInput.trim(), finalRunTime, gameSpeed, machineGunCount); 
           gameState = 'leaderboard'; 
-          leaderboardTab = 0; // Volta para a aba de tempo
+          leaderboardTab = 0; 
           fetchLeaderboard();
           playerNameInput = ""; 
       }
     } else if (k === 'backspace') playerNameInput = playerNameInput.slice(0, -1);
     else if (k.length === 1 && /^[a-zA-Z0-9 ]$/.test(k) && playerNameInput.length < 12) playerNameInput += k;
-  } else if (gameState === 'options' && optionIndex === 6) {
-      if (k === 'arrowleft' || k === 'a') changeGameSpeed(-1);
-      if (k === 'arrowright' || k === 'd') changeGameSpeed(1);
-      if (k === 'arrowup' || k === 'w') handleAction('up');
-      if (k === 'arrowdown' || k === 's') handleAction('down');
-      if (k === 'z' || k === 'enter' || k === ' ') handleAction('select');
   } else {
     if (k === 'arrowup' || k === 'w') handleAction('up');
     if (k === 'arrowdown' || k === 's') handleAction('down');
@@ -508,7 +495,6 @@ canvas.addEventListener('pointerdown', e => {
                 }
             }
         } else if (gameState === 'leaderboard') {
-            // Clicar nas abas de navegação
             if (pos.y > 130 && pos.y < 170) {
                 if (pos.x < W / 2) { leaderboardTab = 0; }
                 else { leaderboardTab = 1; }
@@ -609,7 +595,7 @@ function update() {
     machineGunEvent = 1; 
     machineGunTimer = 120; 
     bullets = []; lasers = [];
-    machineGunCount++; // INCREMENTA O CONTADOR
+    machineGunCount++; 
   }
 
   if (machineGunEvent === 2) {
@@ -775,7 +761,6 @@ function draw() {
     ctx.fillStyle = leaderboardTab === 1 ? '#0f0' : '#666';
     ctx.fillText("[ " + t('tabWins') + " ]", W/2 + 140, 120);
 
-    // DICA DE NAVEGAÇÃO
     ctx.fillStyle = '#555'; ctx.font = '16px monospace';
     ctx.fillText("< >", W/2, 150);
 
@@ -791,12 +776,11 @@ function draw() {
         if (leaderboardTab === 0) {
             // ABA DE MENOR TEMPO
             ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 190); 
-            ctx.fillText(t('time'), 200, 190); 
-            ctx.fillText(t('speed'), 290, 190);
-            ctx.fillText(t('mGuns'), 380, 190);
-            ctx.fillText(t('date'), 580, 190);
+            ctx.fillText(t('time'), 250, 190); 
+            ctx.fillText(t('speed'), 350, 190);
+            ctx.fillText(t('mGuns'), 450, 190);
+            ctx.fillText(t('date'), 630, 190);
 
-            // Pega os 10 melhores tempos
             let topTimes = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999)).slice(0, 10);
 
             for (let i = 0; i < topTimes.length; i++) {
@@ -808,12 +792,13 @@ function draw() {
                 let mGunStr = entry.metralhas !== undefined ? entry.metralhas : "-";
                 let dateStr = entry.data || "--";
                 
+                // CORRIGIDO AQUI: Removido o substring e ajustado o alinhamento
                 ctx.textAlign = "left"; 
-                ctx.fillText(`${i+1}. ${entry.nome.substring(0,8)}`, 40, y); 
+                ctx.fillText(`${i+1}. ${entry.nome}`, 40, y); 
                 ctx.textAlign = "center";
-                ctx.fillText(timeStr, 200, y); 
-                ctx.fillText(spdStr, 290, y);
-                ctx.fillText(mGunStr, 380, y);
+                ctx.fillText(timeStr, 250, y); 
+                ctx.fillText(spdStr, 350, y);
+                ctx.fillText(mGunStr, 450, y);
                 ctx.textAlign = "right";
                 ctx.fillText(dateStr, 760, y);
             }
@@ -822,7 +807,6 @@ function draw() {
             ctx.fillStyle = '#fff'; ctx.fillText(t('name'), W/2 - 100, 190); 
             ctx.fillText(t('wins'), W/2 + 100, 190);
 
-            // Agrupa por jogador
             let winsMap = {};
             leaderboardData.forEach(run => {
                 if(!winsMap[run.nome]) winsMap[run.nome] = 0;
