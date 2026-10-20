@@ -28,13 +28,13 @@
 // ==========================================
 const JSONBIN_BIN_ID = "6ad6f8e9ffd5d160537aed8b";
 const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97qr4/5yqfS";
-  
+
 let leaderboardData = []; 
 let isSavingScore = false;
 let leaderboardTab = 0; // 0 = Menor Tempo, 1 = Mais Vitórias, 2 = Recentes
 
 // ==========================================
-// VARIÁVEIS DE CONFIGURAÇÃO (PADRÃO)
+// VARIÁVEIS DE CONFIGURAÇÃO
 // ==========================================
 let lang = 'en'; 
 let bgTheme = 0; 
@@ -46,6 +46,10 @@ let gameSpeed = 1.0;
 let machineGunCount = 0; 
 let isDying = false;
 let deathAudioTimer = 0;
+
+// NOVAS VARIÁVEIS DA BOMBA
+let bombEffects = [];
+let screenFlash = 0;
 
 // ==========================================
 // SISTEMA DE SALVAR/CARREGAR CONFIGURAÇÕES
@@ -67,7 +71,6 @@ function saveSettings() {
     localStorage.setItem('tintintleiro_mouseControl', mouseControlEnabled);
     localStorage.setItem('tintintleiro_gameSpeed', gameSpeed);
 }
-
 loadSettings();
 
 // ==========================================
@@ -114,7 +117,6 @@ const i18n = {
         select: "选择"
     }
 };
-
 function t(key) { return i18n[lang][key] || key; }
 
 // ==========================================
@@ -196,9 +198,6 @@ async function fetchLeaderboard() {
     });
     const data = await res.json();
     leaderboardData = data.record.leaderboard || [];
-    
-    // NÃO ORDENAMOS AQUI! Deixamos na ordem original (que é a ordem de inserção, ou seja, cronológica)
-    // A ordenação será feita visualmente na hora de desenhar cada aba.
   } catch (e) { 
     console.error("Erro ao buscar:", e);
     leaderboardData = []; 
@@ -221,7 +220,6 @@ async function saveScore(nome, tempo, speed, mguns) {
         { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }
     );
 
-    // Adiciona um timestamp (código de data exato) para a aba de "Recentes"
     lb.push({ 
         nome: nome, 
         tempo: tempo, 
@@ -231,7 +229,6 @@ async function saveScore(nome, tempo, speed, mguns) {
         timestamp: Date.now() 
     });
     
-    // Limita o tamanho do JSON para não travar
     if (lb.length > 1000) lb = lb.slice(-1000);
 
     await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
@@ -247,6 +244,65 @@ async function saveScore(nome, tempo, speed, mguns) {
 // ==========================================
 // ÁUDIO E VELOCIDADE
 // ==========================================
+function initAudioContext() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}
+
+function playExplosionSound() {
+    initAudioContext();
+    if (!audioCtx) return;
+
+    const duration = 1.5;
+    const sampleRate = audioCtx.sampleRate;
+    const bufferSize = sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    // Gera ruído branco para a explosão
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+
+    const noiseNode = audioCtx.createBufferSource();
+    noiseNode.buffer = buffer;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1000, audioCtx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
+
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+    noiseNode.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    // Adiciona um "punch" grave
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.5);
+    
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(1, audioCtx.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+    osc.connect(oscGain);
+    oscGain.connect(audioCtx.destination);
+
+    noiseNode.start();
+    osc.start();
+    noiseNode.stop(audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + 0.5);
+}
+
 function updateAudioSpeed() {
     if (isDying) return;
     const safeSpeed = Math.min(gameSpeed, 16); 
@@ -283,8 +339,7 @@ function togglePossessedMusic(enabled) {
     if (!bgm) return;
     if (enabled) {
         bgm.pause();
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume(); 
+        initAudioContext();
         
         if (!reversedBuffer) {
             fetch('music.mp3')
@@ -338,6 +393,7 @@ function setupLevel(level) {
   player = { x: W/2, y: H - 100, r: 3, speed: 8, cooldown: 0, lives: 3 };
   boss = { x: W/2, y: 200, r: 80, hp: bossHp, maxHp: bossHp, timer: 0 };
   bullets = []; playerBullets = []; lasers = [];
+  bombEffects = []; // Reseta os efeitos de bomba no nível novo
   
   gameState = 'playing'; 
   invulnerable = 0; 
@@ -419,6 +475,27 @@ function handleAction(action) {
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
             bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
+            
+            // TOCA O SOM E CRIA O EFEITO VISUAL DA BOMBA
+            playExplosionSound();
+            screenFlash = 1.0; // Flash branco/vermelho na tela
+            
+            let bombLetters = [];
+            for (let i = 0; i < 30; i++) {
+                bombLetters.push({
+                    char: chineseChars[Math.floor(Math.random() * chineseChars.length)],
+                    angle: Math.random() * Math.PI * 2,
+                    dist: Math.random() * 100,
+                    speed: 10 + Math.random() * 20,
+                    size: 20 + Math.random() * 40
+                });
+            }
+            bombEffects.push({
+                x: player.x, y: player.y,
+                radius: 10, 
+                alpha: 1.0,
+                letters: bombLetters
+            });
         }
     }
 }
@@ -493,7 +570,6 @@ canvas.addEventListener('pointerdown', e => {
                 }
             }
         } else if (gameState === 'leaderboard') {
-            // Clicar nas 3 abas
             if (pos.y > 120 && pos.y < 160) {
                 if (pos.x < W/3) leaderboardTab = 0;
                 else if (pos.x < 2*W/3) leaderboardTab = 1;
@@ -546,8 +622,23 @@ function update() {
   if (gameState !== 'playing') return;
   if (bombCooldown > 0) bombCooldown--;
   if (screenShake > 0) screenShake--; 
+  if (screenFlash > 0) screenFlash -= 0.05; // Diminui o flash da bomba
 
-  // O TIMER AGORA É 100% REAL (Ignora a velocidade do jogo)
+  // Atualiza os efeitos visuais da bomba
+  for (let i = bombEffects.length - 1; i >= 0; i--) {
+      let be = bombEffects[i];
+      be.radius += 40; // A aura cresce rápido
+      be.alpha -= 0.02; // Vai desaparecendo
+      
+      // Letras voam pra fora e crescem
+      for (let l of be.letters) {
+          l.dist += l.speed;
+          l.size += 1;
+      }
+      
+      if (be.alpha <= 0) bombEffects.splice(i, 1);
+  }
+
   currentRunTime = (performance.now() - gameStartTime) / 1000;
 
   if (isMobile || mouseControlEnabled) {
@@ -694,6 +785,39 @@ function draw() {
     }
   }
 
+  // EFEITO VISUAL DA BOMBA (Aura + Letras)
+  if (gameState === 'playing' || gameState === 'levelCleared') {
+      for (let be of bombEffects) {
+          ctx.save();
+          ctx.globalAlpha = be.alpha;
+          
+          // Aura Vermelha Gigante
+          let gradient = ctx.createRadialGradient(be.x, be.y, be.radius * 0.1, be.x, be.y, be.radius);
+          gradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');
+          gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+          ctx.fillStyle = gradient;
+          ctx.beginPath(); ctx.arc(be.x, be.y, be.radius, 0, Math.PI*2); ctx.fill();
+
+          // Letras Chinesas Voando pra Fora
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          for (let l of be.letters) {
+              let lx = be.x + Math.cos(l.angle) * l.dist;
+              let ly = be.y + Math.sin(l.angle) * l.dist;
+              ctx.fillStyle = '#ff0000';
+              ctx.font = `bold ${l.size}px "Noto Sans CJK SC", sans-serif`;
+              ctx.fillText(l.char, lx, ly);
+          }
+          ctx.restore();
+      }
+  }
+
+  // Tela piscando de vermelho quando a bomba explode
+  if (screenFlash > 0) {
+      ctx.fillStyle = `rgba(255, 0, 0, ${screenFlash * 0.6})`;
+      ctx.fillRect(-50, -50, W + 100, H + 100);
+  }
+
   // Botão de Idioma
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(W - 140, 10, 130, 40);
@@ -777,7 +901,6 @@ function draw() {
     }
     else {
         if (leaderboardTab === 0) {
-            // ABA DE MENOR TEMPO (Ordena pelo menor tempo)
             ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 190); 
             ctx.fillText(t('time'), 250, 190); 
             ctx.fillText(t('speed'), 350, 190);
@@ -789,23 +912,17 @@ function draw() {
             for (let i = 0; i < topTimes.length; i++) {
                 let entry = topTimes[i]; let y = 230 + i * 35;
                 ctx.fillStyle = i === 0 ? '#ff0' : '#ddd';
-                
                 let timeStr = entry.tempo ? entry.tempo.toFixed(2) + "s" : "--";
                 let spdStr = entry.velocidade ? entry.velocidade.toFixed(2) + "x" : "1x";
                 let mGunStr = entry.metralhas !== undefined ? entry.metralhas : "-";
                 let dateStr = entry.data || "--";
                 
-                ctx.textAlign = "left"; 
-                ctx.fillText(`${i+1}. ${entry.nome}`, 40, y); 
-                ctx.textAlign = "center";
-                ctx.fillText(timeStr, 250, y); 
-                ctx.fillText(spdStr, 350, y);
-                ctx.fillText(mGunStr, 450, y);
-                ctx.textAlign = "right";
-                ctx.fillText(dateStr, 760, y);
+                ctx.textAlign = "left"; ctx.fillText(`${i+1}. ${entry.nome}`, 40, y); 
+                ctx.textAlign = "center"; ctx.fillText(timeStr, 250, y); 
+                ctx.fillText(spdStr, 350, y); ctx.fillText(mGunStr, 450, y);
+                ctx.textAlign = "right"; ctx.fillText(dateStr, 760, y);
             }
         } else if (leaderboardTab === 1) {
-            // ABA DE MAIS VITÓRIAS
             ctx.fillStyle = '#fff'; ctx.fillText(t('name'), W/2 - 100, 190); 
             ctx.fillText(t('wins'), W/2 + 100, 190);
 
@@ -825,38 +942,26 @@ function draw() {
                 ctx.textAlign = "left"; ctx.fillText(entry.vitorias, W/2 + 20, y);
             }
         } else {
-            // ABA DE CORRIDAS RECENTES (Ordena pelo Timestamp de inserção)
             ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 190); 
             ctx.fillText(t('time'), 250, 190); 
             ctx.fillText(t('speed'), 350, 190);
             ctx.fillText(t('mGuns'), 450, 190);
             ctx.fillText(t('date'), 630, 190);
 
-            // Clona o array e ordena pelos mais recentes (invertendo a ordem original de inserção)
-            // Se o JSON foi editado manualmente sem timestamp, ordena pelo id simulado
-            let recentRuns = [...leaderboardData].sort((a,b) => {
-                let tA = a.timestamp || 0;
-                let tB = b.timestamp || 0;
-                return tB - tA; // Mais novo primeiro
-            }).slice(0, 10);
+            let recentRuns = [...leaderboardData].sort((a,b) => (b.timestamp||0) - (a.timestamp||0)).slice(0, 10);
 
             for (let i = 0; i < recentRuns.length; i++) {
                 let entry = recentRuns[i]; let y = 230 + i * 35;
-                ctx.fillStyle = '#ddd'; // Sem destaque pro 1º
-                
+                ctx.fillStyle = '#ddd';
                 let timeStr = entry.tempo ? entry.tempo.toFixed(2) + "s" : "--";
                 let spdStr = entry.velocidade ? entry.velocidade.toFixed(2) + "x" : "1x";
                 let mGunStr = entry.metralhas !== undefined ? entry.metralhas : "-";
                 let dateStr = entry.data || "Antigo";
                 
-                ctx.textAlign = "left"; 
-                ctx.fillText(`${entry.nome}`, 40, y); 
-                ctx.textAlign = "center";
-                ctx.fillText(timeStr, 250, y); 
-                ctx.fillText(spdStr, 350, y);
-                ctx.fillText(mGunStr, 450, y);
-                ctx.textAlign = "right";
-                ctx.fillText(dateStr, 760, y);
+                ctx.textAlign = "left"; ctx.fillText(`${entry.nome}`, 40, y); 
+                ctx.textAlign = "center"; ctx.fillText(timeStr, 250, y); 
+                ctx.fillText(spdStr, 350, y); ctx.fillText(mGunStr, 450, y);
+                ctx.textAlign = "right"; ctx.fillText(dateStr, 760, y);
             }
         }
     }
