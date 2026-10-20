@@ -432,95 +432,145 @@ function gameLoop() {
 initGame();
 gameLoop();
   // =========================================================
-// PATCH: CRAZY CHINESE MACHINEGUN (Adicionado por você!)
+// PATCH V2: CRAZY CHINESE MACHINEGUN + CHUVA DE VIDAS
 // =========================================================
 let machineGunEvent = 0;
 let machineGunTimer = 0;
+let extraLives = []; // Array para guardar os corações no mapa
 
-// Guardando as funções originais para não quebrar o jogo
 const originalUpdate = update;
 const originalDraw = draw;
 const originalSetupLevel = setupLevel;
 
-// 1. Patch do Setup (Para limpar a metralhadora quando muda de fase)
+// 1. Resetar tudo ao mudar de fase
 setupLevel = function(level) {
     originalSetupLevel(level);
     machineGunEvent = 0;
     machineGunTimer = 0;
+    extraLives = [];
 }
 
-// 2. Patch do Update (A lógica do evento)
+// 2. A Lógica do Update
 update = function() {
-    // Se estiver no momento do anúncio (Tela Congelada)
+    // --- FASE 1: O Aviso (Tela Congelada) ---
     if (machineGunEvent === 1) {
         machineGunTimer--;
         screenShake = 50; // Terremoto máximo
         if (machineGunTimer <= 0) {
             machineGunEvent = 2;
-            machineGunTimer = 200; // Tempo da metralhadora (uns 3 segundos)
+            machineGunTimer = 240; // 4 SEGUNDOS DE METRALHADORA (240 frames a 60fps)
+            extraLives = []; 
         }
-        return; // Para o jogo aqui, ninguém se mexe
+        return; // Para o jogo, ninguém se mexe no aviso
     }
 
     // Roda o jogo normal primeiro
     originalUpdate();
 
-    // Sorteio para ativar a metralhadora (0.03% de chance por frame)
+    // --- Sorteio para ativar a metralhadora ---
     if (machineGunEvent === 0 && Math.random() < 0.0003 && !gameOver && !gameWin && !levelCleared) {
         machineGunEvent = 1;
-        machineGunTimer = 120; // 2 segundos de tela de aviso
-        bullets = []; // Limpa a tela
+        machineGunTimer = 120; // 2 segundos de aviso
+        bullets = []; 
         lasers = [];
     }
 
-    // A Metralhadora Chinesa em Ação!
+    // --- FASE 2: A Metralhadora Chinesa e a Chuva de Vidas ---
     if (machineGunEvent === 2) {
         machineGunTimer--;
         
         // Cospe balas MUITO rápido
         if (machineGunTimer % 2 === 0) {
-            for (let i = 0; i < 8; i++) {
+            for (let i = 0; i < 6; i++) {
                 let a = Math.random() * Math.PI * 2;
                 bullets.push({ 
                     x: boss.x, y: boss.y, 
-                    vx: Math.cos(a) * 8, // Balas super rápidas
-                    vy: Math.sin(a) * 8, 
+                    vx: Math.cos(a) * 7, 
+                    vy: Math.sin(a) * 7, 
                     r: 8, color: '#f00' 
                 });
             }
         }
+
+        // SPAWN DE VIDAS EXTRAS NO MAPA
+        if (Math.random() < 0.4 && extraLives.length < 60) {
+            extraLives.push({
+                x: Math.random() * (W - 60) + 30, // Espalhado pela tela
+                y: Math.random() * (H - 60) + 30,
+                r: 15, // Hitbox generosa para pegar fácil
+                floatOffset: Math.random() * Math.PI * 2
+            });
+        }
+
+        // Atualizar e checar colisão das vidas extras
+        for (let i = extraLives.length - 1; i >= 0; i--) {
+            let el = extraLives[i];
+            el.floatOffset += 0.1; // Faz o coração flutuar
+            
+            let dx = el.x - player.x;
+            let dy = el.y - player.y;
+            
+            // Se o jogador encostar no coração, ganha vida
+            if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) {
+                player.lives++;
+                extraLives.splice(i, 1); // Some com o coração
+            }
+        }
         
-        if (machineGunTimer <= 0) machineGunEvent = 0;
+        // Finaliza o evento
+        if (machineGunTimer <= 0) {
+            machineGunEvent = 0;
+            extraLives = []; // Limpa os corações que sobrarem
+        }
     }
 };
 
-// 3. Patch do Draw (O visual do anúncio)
+// 3. O Visual
 draw = function() {
     originalDraw();
     
-    // Se estiver no aviso da Metralhadora
+    // --- DESENHA O AVISO ---
     if (machineGunEvent === 1) {
         ctx.fillStyle = 'rgba(0,0,0,0.85)';
         ctx.fillRect(0, 0, W, H);
         
-        // Tremedeira louca na tela
         ctx.save();
         ctx.translate(Math.random()*30-15, Math.random()*30-15);
         ctx.textAlign = 'center';
         
-        // Texto Gigante
         ctx.fillStyle = '#f00';
         ctx.font = 'bold 70px Impact, sans-serif';
         ctx.fillText("CRAZY CHINESE", W/2, H/2 - 40);
         ctx.fillText("MACHINEGUN!!!11!!!!", W/2, H/2 + 40);
         
-        // Enchendo a tela de DUDUDU
         for(let i=0; i<15; i++) {
             ctx.fillStyle = Math.random() > 0.5 ? '#ff0' : '#fff';
             ctx.font = `bold ${20 + Math.random()*50}px sans-serif`;
             ctx.fillText("DUDUDUDUDU", Math.random()*W, Math.random()*H);
         }
         ctx.restore();
+    }
+
+    // --- DESENHA AS VIDAS EXTRAS DURANTE A METRALHADORA ---
+    if (machineGunEvent === 2) {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        for (let el of extraLives) {
+            let floatY = el.y + Math.sin(el.floatOffset) * 5; // Efeito de flutuar
+            
+            // Desenha o coração verde neon
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 30px Arial';
+            ctx.fillText("❤", el.x, floatY);
+            
+            // Um brilho em volta
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(el.x, floatY, 18, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 };
 // =========================================================
