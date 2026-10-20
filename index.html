@@ -2,10 +2,19 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>TINTINTLEIRO - GLÓRIA À CHINA</title>
 <style>
-  body { margin: 0; background: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: monospace; }
-  canvas { border: 4px solid #f00; box-shadow: 0 0 50px #f00; }
+  html, body { 
+    margin: 0; padding: 0; background: #000; color: #fff; 
+    display: flex; justify-content: center; align-items: center; 
+    height: 100vh; width: 100vw; overflow: hidden; font-family: monospace; 
+    touch-action: none; /* Impede zoom e rolagem no celular */
+  }
+  canvas { 
+    border: 4px solid #f00; box-shadow: 0 0 50px #f00; 
+    max-height: 100vh; max-width: 100vw; object-fit: contain; 
+  }
 </style>
 </head>
 <body>
@@ -15,19 +24,31 @@
 
 <script>
 // ==========================================
+// CONFIGURAÇÃO DA API DO JSONBIN (NOVA LEADERBOARD)
+// ==========================================
+const JSONBIN_BIN_ID = "6ad6f8e9ffd5d160537aed8b";
+const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97qr4/5yqfS";
+
+let leaderboardData = [];
+let isSavingScore = false;
+
+// ==========================================
 // VARIÁVEIS GLOBAIS
 // ==========================================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
 let bgm = document.getElementById('bgm');
 let bossImg = new Image();
 bossImg.src = 'boss.png';
 
 const keys = {};
-let gameState = 'menu'; // 'menu', 'options', 'playing', 'levelCleared', 'gameOver', 'gameWin'
+let gameState = 'menu'; // 'menu', 'options', 'leaderboard', 'nameInput', 'playing', 'levelCleared', 'gameOver', 'gameWin'
 let currentLevel = 1;
+let playerNameInput = "";
 
 let player, boss, bullets, playerBullets, lasers;
 let invulnerable, screenShake, bombs, bombCooldown;
@@ -35,19 +56,17 @@ let extraLives = [];
 let machineGunEvent = 0;
 let machineGunTimer = 0;
 
-// Opções de Fundo e Gameplay
-let bgTheme = 0; // 0 = Original, 1 = Preto, 2 = Bandeira da China
+let bgTheme = 0; 
 let autoFireEnabled = false;
 let possessedMusicEnabled = false;
 let mouseControlEnabled = false;
 let menuIndex = 0;
 let optionIndex = 0;
 
-// Controle de Mouse
-let mouseX = W / 2;
-let mouseY = H - 100;
+let targetX = W / 2;
+let targetY = H - 100;
+let isDragging = false;
 
-// Controle de Áudio Invertido
 let audioCtx = null;
 let reversedBuffer = null;
 let possessedSource = null;
@@ -78,7 +97,68 @@ generateBackground();
 const glitchText = ["TIN TIN TLOIN", "FIRST EVER!!!!!!!!!!", "GLÓRIA À CHINA", "MORTE", "HELL", "死"];
 
 // ==========================================
-// CONTROLE DE ÁUDIO E MÚSICA POSSUÍDA
+// FUNÇÕES DA LEADERBOARD (JSONBIN)
+// ==========================================
+async function fetchLeaderboard() {
+  if (JSONBIN_BIN_ID.includes("COLE_AQUI")) {
+    leaderboardData = [];
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
+    });
+    const data = await res.json();
+    leaderboardData = data.record.leaderboard || [];
+  } catch (e) {
+    console.error("Erro ao buscar leaderboard:", e);
+    leaderboardData = [];
+  }
+}
+
+async function saveScore(nome) {
+  if (isSavingScore || JSONBIN_BIN_ID.includes("COLE_AQUI")) return;
+  isSavingScore = true;
+  
+  try {
+    // 1. Busca os dados atuais
+    const getRes = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
+    });
+    const getData = await getRes.json();
+    let lb = getData.record.leaderboard || [];
+    
+    // 2. Atualiza ou adiciona o jogador
+    const existing = lb.find(e => e.nome.toLowerCase() === nome.toLowerCase());
+    if (existing) {
+      existing.vitorias++;
+    } else {
+      lb.push({ nome: nome, vitorias: 1 });
+    }
+    
+    // 3. Ordena do maior para o menor
+    lb.sort((a, b) => b.vitorias - a.vitorias);
+    
+    // 4. Salva de volta
+    await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_MASTER_KEY
+      },
+      body: JSON.stringify({ leaderboard: lb })
+    });
+    
+    leaderboardData = lb;
+  } catch (e) {
+    console.error("Erro ao salvar score:", e);
+  } finally {
+    isSavingScore = false;
+  }
+}
+
+// ==========================================
+// ÁUDIO
 // ==========================================
 function playAudio() {
   if (bgm && bgm.paused && !possessedMusicEnabled) {
@@ -89,69 +169,41 @@ function playAudio() {
 
 function triggerGlitchAudio() {
   if (!bgm || possessedMusicEnabled) return;
-  try {
-    bgm.playbackRate = 2.5; 
-    bgm.preservesPitch = false;
-  } catch (e) { console.error(e); }
+  try { bgm.playbackRate = 2.5; bgm.preservesPitch = false; } catch (e) { console.error(e); }
 }
 
 function resetAudio() {
   if (!bgm) return;
-  try {
-    bgm.playbackRate = 1.0;
-    bgm.preservesPitch = true;
-  } catch (e) { console.error(e); }
+  try { bgm.playbackRate = 1.0; bgm.preservesPitch = true; } catch (e) { console.error(e); }
 }
 
-// MÁGICA DA MÚSICA AO CONTRÁRIO
 function togglePossessedMusic(enabled) {
     if (!bgm) return;
-    
     if (enabled) {
         bgm.pause();
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (!reversedBuffer) {
-            // Tenta baixar e inverter o MP3
             fetch('music.mp3')
-                .then(response => response.arrayBuffer())
-                .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+                .then(res => res.arrayBuffer())
+                .then(buf => audioCtx.decodeAudioData(buf))
                 .then(audioBuffer => {
-                    const numberOfChannels = audioBuffer.numberOfChannels;
-                    const length = audioBuffer.length;
-                    const sampleRate = audioBuffer.sampleRate;
-                    const reversed = audioCtx.createBuffer(numberOfChannels, length, sampleRate);
-                    
-                    for (let channel = 0; channel < numberOfChannels; channel++) {
-                        const channelData = audioBuffer.getChannelData(channel);
-                        const reversedData = reversed.getChannelData(channel);
-                        for (let i = 0; i < length; i++) {
-                            reversedData[i] = channelData[length - 1 - i];
-                        }
+                    const numChan = audioBuffer.numberOfChannels;
+                    const len = audioBuffer.length;
+                    const rate = audioBuffer.sampleRate;
+                    const rev = audioCtx.createBuffer(numChan, len, rate);
+                    for (let c = 0; c < numChan; c++) {
+                        const cData = audioBuffer.getChannelData(c);
+                        const rData = rev.getChannelData(c);
+                        for (let i = 0; i < len; i++) rData[i] = cData[len - 1 - i];
                     }
-                    reversedBuffer = reversed;
+                    reversedBuffer = rev;
                     playReversed();
                 })
-                .catch(err => {
-                    console.log("Erro ao inverter MP3 (bloqueio de arquivo local). Usando Efeito Glitch.", err);
-                    // Fallback insano
-                    bgm.playbackRate = 2.5;
-                    bgm.preservesPitch = false;
-                    bgm.play();
-                });
-        } else {
-            playReversed();
-        }
+                .catch(e => { bgm.playbackRate = 2.5; bgm.preservesPitch = false; bgm.play(); });
+        } else playReversed();
     } else {
-        if (possessedSource) {
-            possessedSource.stop();
-            possessedSource = null;
-        }
-        bgm.playbackRate = 1.0;
-        bgm.preservesPitch = true;
-        bgm.play();
+        if (possessedSource) { possessedSource.stop(); possessedSource = null; }
+        bgm.playbackRate = 1.0; bgm.preservesPitch = true; bgm.play();
     }
 }
 
@@ -165,7 +217,7 @@ function playReversed() {
 }
 
 // ==========================================
-// FUNÇÕES DO JOGO
+// JOGO
 // ==========================================
 function setupLevel(level) {
   currentLevel = level;
@@ -176,103 +228,116 @@ function setupLevel(level) {
   bullets = []; playerBullets = []; lasers = [];
   
   gameState = 'playing'; 
-  invulnerable = 0; 
-  screenShake = 0;
-  bombs = 3; 
-  bombCooldown = 0;
-  
-  machineGunEvent = 0;
-  machineGunTimer = 0;
+  invulnerable = 0; screenShake = 0;
+  bombs = 3; bombCooldown = 0;
+  machineGunEvent = 0; machineGunTimer = 0;
   extraLives = [];
   
-  // Sincroniza o mouse com a posição inicial do player
-  mouseX = player.x;
-  mouseY = player.y;
-  
-  resetAudio();
-  playAudio();
+  targetX = player.x; targetY = player.y;
+  resetAudio(); playAudio();
 }
 
-function initGame() {
-  setupLevel(1);
-}
+function initGame() { setupLevel(1); }
 
 // ==========================================
-// CONTROLES
+// CONTROLES (TECLADO E TOQUE)
 // ==========================================
+function handleAction(action) {
+    if (gameState === 'menu') {
+        if (action === 'up') menuIndex = (menuIndex + 2) % 3;
+        if (action === 'down') menuIndex = (menuIndex + 1) % 3;
+        if (action === 'select') {
+            if (menuIndex === 0) initGame();
+            else if (menuIndex === 1) gameState = 'options';
+            else if (menuIndex === 2) { gameState = 'leaderboard'; fetchLeaderboard(); }
+        }
+    } else if (gameState === 'options') {
+        if (action === 'down') optionIndex = (optionIndex + 1) % 7;
+        if (action === 'up') optionIndex = (optionIndex + 6) % 7;
+        if (action === 'select') {
+            if (optionIndex === 0) bgTheme = 0;
+            if (optionIndex === 1) bgTheme = 1;
+            if (optionIndex === 2) bgTheme = 2;
+            if (optionIndex === 3) autoFireEnabled = !autoFireEnabled;
+            if (optionIndex === 4) { possessedMusicEnabled = !possessedMusicEnabled; togglePossessedMusic(possessedMusicEnabled); }
+            if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
+            if (optionIndex === 6) gameState = 'menu';
+        }
+    } else if (gameState === 'leaderboard') {
+        if (action === 'select') gameState = 'menu';
+    } else if (gameState === 'levelCleared') {
+        if (action === 'select' && currentLevel < 6) setupLevel(currentLevel + 1);
+    } else if (gameState === 'gameOver' || gameState === 'gameWin') {
+        if (action === 'select') { gameState = 'menu'; resetAudio(); }
+    } else if (gameState === 'playing') {
+        if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
+            bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
+        }
+    }
+}
+
+// Teclado
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
-  
+  if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'backspace'].includes(k)) e.preventDefault();
   if (keys[k]) return; 
   keys[k] = true;
   
-  // --- MENU PRINCIPAL ---
-  if (gameState === 'menu') {
-    if (k === 'arrowdown' || k === 's' || k === 'arrowup' || k === 'w') {
-      menuIndex = menuIndex === 0 ? 1 : 0;
-    }
-    if (k === 'z' || k === 'enter' || k === ' ') {
-      if (menuIndex === 0) initGame();
-      else gameState = 'options';
-    }
-  }
-  
-  // --- OPÇÕES ---
-  else if (gameState === 'options') {
-    if (k === 'arrowdown' || k === 's') optionIndex = (optionIndex + 1) % 7;
-    if (k === 'arrowup' || k === 'w') optionIndex = (optionIndex + 6) % 7;
-    
-    if (k === 'z' || k === 'enter' || k === ' ') {
-      if (optionIndex === 0) bgTheme = 0;
-      if (optionIndex === 1) bgTheme = 1;
-      if (optionIndex === 2) bgTheme = 2;
-      if (optionIndex === 3) autoFireEnabled = !autoFireEnabled;
-      if (optionIndex === 4) {
-          possessedMusicEnabled = !possessedMusicEnabled;
-          togglePossessedMusic(possessedMusicEnabled);
-      }
-      if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
-      if (optionIndex === 6) gameState = 'menu';
-    }
-  }
-  
-  // --- JOGANDO ---
-  else if (gameState === 'playing') {
-    if (k === 'x' && bombs > 0 && bombCooldown <= 0) {
-      bombs--;
-      bullets = []; lasers = [];
-      boss.hp -= 300; 
-      screenShake = 30;
-      bombCooldown = 30;
-    }
-  }
-  
-  // --- AVANÇAR NÍVEL / RESTART ---
-  else if (gameState === 'levelCleared') {
-    if (k === 'z' || k === 'enter' || k === ' ') {
-      if (currentLevel < 6) setupLevel(currentLevel + 1);
-    }
-  }
-  else if (gameState === 'gameOver' || gameState === 'gameWin') {
-    if (k === 'r') {
-      gameState = 'menu';
-      resetAudio();
-    }
+  if (gameState === 'nameInput') {
+    if (k === 'enter') {
+      if (playerNameInput.trim().length > 0 && !isSavingScore) { saveScore(playerNameInput.trim()); gameState = 'menu'; playerNameInput = ""; }
+    } else if (k === 'backspace') playerNameInput = playerNameInput.slice(0, -1);
+    else if (k.length === 1 && /^[a-zA-Z0-9 ]$/.test(k) && playerNameInput.length < 12) playerNameInput += k;
+  } else {
+    if (k === 'arrowup' || k === 'w') handleAction('up');
+    if (k === 'arrowdown' || k === 's') handleAction('down');
+    if (k === 'z' || k === 'enter' || k === ' ') handleAction('select');
+    if (k === 'x') handleAction('bomb');
   }
 });
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-window.addEventListener('keyup', e => {
-  keys[e.key.toLowerCase()] = false;
-});
-
-// CONTROLE POR MOUSE
-canvas.addEventListener('mousemove', e => {
+// Mouse / Toque
+function getPointerPos(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    mouseX = (e.clientX - rect.left) * scaleX;
-    mouseY = (e.clientY - rect.top) * scaleY;
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+
+canvas.addEventListener('pointerdown', e => {
+    const pos = getPointerPos(e);
+    isDragging = true;
+    targetX = pos.x; targetY = pos.y;
+
+    if (isMobile) {
+        if (gameState === 'menu') {
+            if (pos.y > H/2 - 70 && pos.y < H/2 - 10) { menuIndex = 0; handleAction('select'); }
+            else if (pos.y > H/2 && pos.y < H/2 + 60) { menuIndex = 1; handleAction('select'); }
+            else if (pos.y > H/2 + 70 && pos.y < H/2 + 130) { menuIndex = 2; handleAction('select'); }
+        } else if (gameState === 'options') {
+            for(let i=0; i<7; i++) {
+                if (pos.y > 200 + i*60 && pos.y < 250 + i*60) { optionIndex = i; handleAction('select'); }
+            }
+        } else if (gameState === 'leaderboard' || gameState === 'levelCleared' || gameState === 'gameOver' || gameState === 'gameWin') {
+            handleAction('select');
+        } else if (gameState === 'playing') {
+            if (pos.x > W - 120 && pos.y > H - 120) handleAction('bomb');
+        }
+    }
 });
+
+canvas.addEventListener('pointermove', e => {
+    if (!isDragging && gameState === 'playing') return; 
+    const pos = getPointerPos(e);
+    targetX = pos.x; targetY = pos.y;
+});
+
+canvas.addEventListener('pointerup', () => isDragging = false);
+canvas.addEventListener('pointercancel', () => isDragging = false);
 
 // ==========================================
 // UPDATE (LÓGICA)
@@ -281,22 +346,19 @@ function update() {
   if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
 
   if (machineGunEvent === 1) {
-    machineGunTimer--;
-    screenShake = 50;
-    if (machineGunTimer <= 0) {
-      machineGunEvent = 2;
-      machineGunTimer = 240; 
-    }
+    machineGunTimer--; screenShake = 50;
+    if (machineGunTimer <= 0) { machineGunEvent = 2; machineGunTimer = 240; }
     return; 
   }
-
   if (gameState !== 'playing') return;
   if (bombCooldown > 0) bombCooldown--;
 
-  // Movimento Jogador (Teclado ou Mouse)
-  if (mouseControlEnabled) {
-      player.x += (mouseX - player.x) * 0.25;
-      player.y += (mouseY - player.y) * 0.25;
+  // Movimento
+  if (isMobile || mouseControlEnabled) {
+      if (isMobile || isDragging) {
+          player.x += (targetX - player.x) * 0.4;
+          player.y += (targetY - player.y) * 0.4;
+      }
   } else {
       if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
       if (keys['arrowright'] || keys['d']) player.x += player.speed;
@@ -309,112 +371,79 @@ function update() {
 
   if (player.cooldown > 0) player.cooldown--;
 
-  // Tiro do Jogador (Automático ou Tecla)
-  if ((keys['z'] || keys[' '] || autoFireEnabled) && player.cooldown <= 0) {
-    playerBullets.push({ x: player.x, y: player.y - 20, r: 5, vy: -18, damage: 25 });
+  // Tiro (Automático ou Tecla)
+  if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) {
+    playerBullets.push({ x: player.x, y: player.y - 20, r: 6, vy: -18, damage: 25 });
     player.cooldown = 4;
   }
 
-  // Movimento Boss
+  // Boss e Dificuldade
   let speedMult = 1 + (currentLevel * 0.15);
   boss.x = W/2 + Math.sin(boss.timer / (80 / speedMult)) * 200;
   boss.y = 200 + Math.cos(boss.timer / (100 / speedMult)) * 50;
   boss.timer++;
 
-  // Dificuldade
   let fireRate = Math.max(8, 25 - (currentLevel * 2)); 
   let bulletSpeed = 3.5 + (currentLevel * 0.4);
   let laserRate = Math.max(80, 220 - (currentLevel * 25));
 
-  // Atirar Balas (Normal)
   if (machineGunEvent === 0 && boss.timer % Math.floor(fireRate) === 0) {
     const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
     let spread = Math.min(4, 1 + Math.floor(currentLevel / 2)); 
     for(let i = -spread; i <= spread; i++) {
-      bullets.push({
-        x: boss.x, y: boss.y, 
-        vx: Math.cos(angle + i * 0.2) * bulletSpeed,
-        vy: Math.sin(angle + i * 0.2) * bulletSpeed,
-        r: 10, color: ['#0f0', '#f00', '#ff0', '#00f', '#ffa500'][Math.floor(Math.random() * 5)]
-      });
+      bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(angle + i * 0.2) * bulletSpeed, vy: Math.sin(angle + i * 0.2) * bulletSpeed, r: 10, color: ['#0f0', '#f00', '#ff0', '#00f', '#ffa500'][Math.floor(Math.random() * 5)] });
     }
   }
 
-  // Laser (Normal)
   if (machineGunEvent === 0 && boss.timer % Math.floor(laserRate) === 0) {
     const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
     lasers.push({ angle: angle, life: 70, warning: 40 });
     if (currentLevel === 6) lasers.push({ angle: angle + Math.PI/4, life: 70, warning: 40 });
   }
 
-  // Sorteio da Metralhadora Maluca
   if (machineGunEvent === 0 && Math.random() < 0.0005) { 
-    machineGunEvent = 1;
-    machineGunTimer = 120; 
-    bullets = []; lasers = [];
+    machineGunEvent = 1; machineGunTimer = 120; bullets = []; lasers = [];
   }
 
-  // Lógica da Metralhadora
   if (machineGunEvent === 2) {
     machineGunTimer--;
-    
     if (machineGunTimer % 2 === 0) {
       for (let i = 0; i < 8; i++) {
         let a = Math.random() * Math.PI * 2;
-        bullets.push({ 
-          x: boss.x, y: boss.y, 
-          vx: Math.cos(a) * 8, vy: Math.sin(a) * 8, 
-          r: 8, color: '#f00' 
-        });
+        bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * 8, vy: Math.sin(a) * 8, r: 8, color: '#f00' });
       }
     }
-
     if (Math.random() < 0.8 && extraLives.length < 100) { 
-      extraLives.push({
-        x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30,
-        r: 20, floatOffset: Math.random() * Math.PI * 2
-      });
+      extraLives.push({ x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30, r: 20, floatOffset: Math.random() * Math.PI * 2 });
     }
-
     for (let i = extraLives.length - 1; i >= 0; i--) {
       let el = extraLives[i];
       el.floatOffset += 0.1;
       let dx = el.x - player.x; let dy = el.y - player.y;
-      if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) {
-        player.lives += 5; 
-        extraLives.splice(i, 1);
-      }
+      if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) { player.lives += 5; extraLives.splice(i, 1); }
     }
-
-    if (machineGunTimer <= 0) {
-      machineGunEvent = 0;
-      extraLives = [];
-    }
+    if (machineGunTimer <= 0) { machineGunEvent = 0; extraLives = []; }
   }
 
   if (invulnerable > 0) invulnerable--;
   if (screenShake > 0) screenShake--;
 
-  // Colisão Tiros no Boss
+  // Colisões
   for (let i = playerBullets.length - 1; i >= 0; i--) {
     let pb = playerBullets[i];
     if (!pb) continue;
     pb.y += pb.vy;
     let dx = pb.x - boss.x; let dy = pb.y - boss.y;
     if (dx*dx + dy*dy < (boss.r + pb.r)*(boss.r + pb.r)) {
-      boss.hp -= pb.damage; 
-      playerBullets.splice(i, 1);
+      boss.hp -= pb.damage; playerBullets.splice(i, 1);
       if (boss.hp <= 0) { 
         boss.hp = 0; 
-        gameState = (currentLevel === 6) ? 'gameWin' : 'levelCleared';
+        if (currentLevel === 6) { gameState = 'nameInput'; playerNameInput = ""; } else { gameState = 'levelCleared'; }
         triggerGlitchAudio(); 
       }
-    } else if (pb.y < 0) {
-      playerBullets.splice(i, 1);
-    }
+    } else if (pb.y < 0) playerBullets.splice(i, 1);
   }
 
-  // Colisão Balas no Jogador
   for (let i = bullets.length - 1; i >= 0; i--) {
     let b = bullets[i];
     if (!b) continue;
@@ -428,7 +457,6 @@ function update() {
     if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
   }
 
-  // Colisão Lasers
   for (let i = lasers.length - 1; i >= 0; i--) {
     let l = lasers[i];
     if (!l) continue;
@@ -451,35 +479,36 @@ function draw() {
   ctx.save();
   if (screenShake > 0) ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
 
-  // 1. Fundo
-  if (bgTheme === 0) {
-    ctx.drawImage(bgCanvas, 0, 0);
-  } else if (bgTheme === 1) {
-    ctx.fillStyle = '#000000'; ctx.fillRect(-50, -50, W + 100, H + 100);
-  } else if (bgTheme === 2) {
+  // Fundo
+  if (bgTheme === 0) ctx.drawImage(bgCanvas, 0, 0);
+  else if (bgTheme === 1) { ctx.fillStyle = '#000'; ctx.fillRect(-50, -50, W + 100, H + 100); }
+  else if (bgTheme === 2) {
     ctx.fillStyle = '#DE2910'; ctx.fillRect(-50, -50, W + 100, H + 100);
     ctx.fillStyle = '#FFDE00';
-    for(let i=0; i<25; i++) {
-      ctx.font = `bold ${20 + Math.random()*30}px Arial`;
-      ctx.fillText("★", Math.random()*W, Math.random()*H);
-    }
+    for(let i=0; i<25; i++) { ctx.font = `bold ${20 + Math.random()*30}px Arial`; ctx.fillText("★", Math.random()*W, Math.random()*H); }
   }
 
-  // 2. Menus
+  // Menus
   if (gameState === 'menu') {
     ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
-    ctx.fillText("TINTINTLEIRO", W/2, H/2 - 150);
+    ctx.fillText("TINTINTLEIRO", W/2, H/2 - 180);
 
-    ctx.font = 'bold 40px monospace';
+    ctx.font = 'bold 35px monospace';
     ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff';
-    ctx.fillText(menuIndex === 0 ? "> INICIAR JOGO <" : "INICIAR JOGO", W/2, H/2);
+    ctx.fillText(menuIndex === 0 ? "> INICIAR JOGO <" : "INICIAR JOGO", W/2, H/2 - 40);
     ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff';
-    ctx.fillText(menuIndex === 1 ? "> OPÇÕES <" : "OPÇÕES", W/2, H/2 + 80);
+    ctx.fillText(menuIndex === 1 ? "> OPÇÕES <" : "OPÇÕES", W/2, H/2 + 30);
+    ctx.fillStyle = menuIndex === 2 ? '#0f0' : '#fff';
+    ctx.fillText(menuIndex === 2 ? "> LEADERBOARD <" : "LEADERBOARD", W/2, H/2 + 100);
+
+    // Made by Neurokiller
+    ctx.fillStyle = '#888'; ctx.font = 'bold 16px monospace';
+    ctx.fillText("MADE BY NEUROKILLER", W/2, H - 80);
 
     ctx.fillStyle = '#ff0'; ctx.font = '20px monospace';
-    ctx.fillText("Use as Setas/WASD e aperte Z para selecionar", W/2, H - 50);
+    ctx.fillText(isMobile ? "Toque nos textos para selecionar" : "Use as Setas/WASD e aperte Z para selecionar", W/2, H - 40);
   } 
   else if (gameState === 'options') {
     ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
@@ -487,13 +516,8 @@ function draw() {
     ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
     ctx.fillText("OPÇÕES", W/2, 120);
 
-    const optionsList = [
-        "Fundo Original", "Fundo Preto", "Bandeira da China",
-        "Tiro Automatico", "Musica Possuida", "Controle por Mouse", "Voltar"
-    ];
-
+    const optionsList = ["Fundo Original", "Fundo Preto", "Bandeira da China", "Tiro Automatico", "Musica Possuida", "Controle por Mouse", "Voltar"];
     ctx.font = 'bold 28px monospace';
-    
     for (let i = 0; i < optionsList.length; i++) {
         let text = optionsList[i];
         if (i === 0 && bgTheme === 0) text += " [X]";
@@ -502,51 +526,75 @@ function draw() {
         if (i === 3) text += autoFireEnabled ? " [ON]" : " [OFF]";
         if (i === 4) text += possessedMusicEnabled ? " [ON]" : " [OFF]";
         if (i === 5) text += mouseControlEnabled ? " [ON]" : " [OFF]";
-        
         ctx.fillStyle = optionIndex === i ? '#0f0' : '#fff';
         ctx.fillText((optionIndex === i ? "> " : "") + text, W/2, 220 + i * 60);
     }
   } 
+  else if (gameState === 'leaderboard') {
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 60px Impact, sans-serif';
+    ctx.fillText("🏆 LEADERBOARD 🏆", W/2, 100);
+    ctx.font = 'bold 22px monospace'; ctx.fillStyle = '#fff';
+    ctx.fillText("NOME", W/2 - 150, 180); ctx.fillText("VITÓRIAS", W/2 + 150, 180);
+    ctx.font = '20px monospace';
+    if (JSONBIN_BIN_ID.includes("COLE_AQUI")) { ctx.fillStyle = '#ff0'; ctx.fillText("Configure o JSONBin no código.", W/2, 300); }
+    else if (leaderboardData.length === 0) { ctx.fillStyle = '#fff'; ctx.fillText("Carregando...", W/2, 300); }
+    else {
+        for (let i = 0; i < Math.min(leaderboardData.length, 10); i++) {
+            let entry = leaderboardData[i]; let y = 230 + i * 40;
+            ctx.fillStyle = i === 0 ? '#ff0' : '#fff';
+            ctx.fillText(entry.nome, W/2 - 150, y); ctx.fillText(entry.vitorias, W/2 + 150, y);
+        }
+    }
+    ctx.fillStyle = '#0f0'; ctx.font = 'bold 30px monospace'; ctx.fillText("Toque/Aperte Z para voltar", W/2, H - 100);
+  }
+  else if (gameState === 'nameInput') {
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
+    ctx.fillText("VOCÊ VENCEU O INFERNO!", W/2, H/2 - 100);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText("YOUR NAME:", W/2, H/2 - 20);
+    ctx.strokeStyle = '#0f0'; ctx.lineWidth = 3; ctx.strokeRect(W/2 - 200, H/2, 400, 60);
+    ctx.fillStyle = '#0f0'; ctx.font = 'bold 36px monospace';
+    let cursor = (Math.floor(Date.now() / 500) % 2 === 0) ? "|" : "";
+    ctx.fillText(playerNameInput + cursor, W/2, H/2 + 42);
+    ctx.fillStyle = '#fff'; ctx.font = '20px monospace'; ctx.fillText("Digite seu nome e aperte ENTER", W/2, H/2 + 100);
+  }
   
-  // 3. Jogo
+  // Jogo
   else {
     if (gameState !== 'gameOver' && gameState !== 'gameWin') {
       // Boss
       ctx.save(); ctx.translate(boss.x, boss.y);
-      if (bossImg.complete && bossImg.naturalWidth !== 0) {
-        ctx.drawImage(bossImg, -boss.r, -boss.r, boss.r * 2, boss.r * 2);
-      } else {
-        ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI*2); ctx.fill();
-      }
-      ctx.fillStyle = '#ff0000';
-      ctx.beginPath(); ctx.arc(-30, -20, 10, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(30, -20, 10, 0, Math.PI*2); ctx.fill();
+      if (bossImg.complete && bossImg.naturalWidth !== 0) ctx.drawImage(bossImg, -boss.r, -boss.r, boss.r * 2, boss.r * 2);
+      else { ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI*2); ctx.fill(); }
+      ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(-30, -20, 10, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(30, -20, 10, 0, Math.PI*2); ctx.fill();
       ctx.restore();
 
       // Lasers
       for (let l of lasers) {
-        const eyeX = boss.x + (Math.cos(l.angle) > 0 ? 30 : -30);
-        const eyeY = boss.y - 20;
-        if (l.warning > 0) {
-          ctx.strokeStyle = `rgba(255, 0, 0, ${Math.random() * 0.6 + 0.2})`;
-          ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
-        } else {
-          ctx.strokeStyle = '#f00'; ctx.lineWidth = 30;
-          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
-          ctx.strokeStyle = '#fff'; ctx.lineWidth = 10;
-          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
+        const eyeX = boss.x + (Math.cos(l.angle) > 0 ? 30 : -30); const eyeY = boss.y - 20;
+        if (l.warning > 0) { ctx.strokeStyle = `rgba(255, 0, 0, ${Math.random() * 0.6 + 0.2})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke(); }
+        else {
+          ctx.strokeStyle = '#f00'; ctx.lineWidth = 30; ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
         }
       }
 
-      // Tiros e Balas
+      // BALAS DO JOGADOR (Vermelhas, Grandes e Brilhantes)
       for (let pb of playerBullets) {
-        ctx.fillStyle = '#0ff'; ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#ff0000';
+        ctx.fillStyle = '#ff2222'; 
+        ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.restore();
       }
-      for (let b of bullets) {
-        ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+      // BALAS DO BOSS
+      for (let b of bullets) { 
+        ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill(); 
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); 
       }
 
       // Vidas Extras
@@ -554,10 +602,8 @@ function draw() {
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let el of extraLives) {
           let floatY = el.y + Math.sin(el.floatOffset) * 5;
-          ctx.fillStyle = '#0f0'; ctx.font = 'bold 40px Arial';
-          ctx.fillText("❤", el.x, floatY);
-          ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.arc(el.x, floatY, 20, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = '#0f0'; ctx.font = 'bold 40px Arial'; ctx.fillText("❤", el.x, floatY);
+          ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(el.x, floatY, 20, 0, Math.PI * 2); ctx.stroke();
         }
       }
 
@@ -567,45 +613,34 @@ function draw() {
       ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.ellipse(0, 12, 12, 16, 0, 0, Math.PI*2); ctx.fill(); 
       ctx.fillStyle = '#D2B48C'; ctx.fillRect(-4, -30, 8, 35); 
       ctx.fillStyle = '#8B4513'; ctx.fillRect(-6, -36, 12, 8); 
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; 
-      ctx.beginPath(); ctx.moveTo(-2, -35); ctx.lineTo(-2, 20); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(2, -35); ctx.lineTo(2, 20); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, -35); ctx.lineTo(-2, 20); ctx.stroke(); ctx.beginPath(); ctx.moveTo(2, -35); ctx.lineTo(2, 20); ctx.stroke();
       ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 12, 3, 0, Math.PI*2); ctx.fill(); 
       ctx.restore();
 
-      // HUD
-      ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40);
-      ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
-      let hpWidth = 600 * (boss.hp / boss.maxHp);
-      ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0';
-      ctx.fillRect(100, 40, hpWidth, 40);
-      
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center";
-      ctx.fillText(`TINTINTLEIRO - NÍVEL ${currentLevel}`, W/2, 70);
-      
-      ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
-      if (player.lives > 10) {
-          ctx.fillText(`VIDAS: ❤ x ${player.lives}`, 100, 120);
-      } else {
-          ctx.fillText("VIDAS: " + "❤".repeat(player.lives), 100, 120);
+      // Botão de Bomba no Celular
+      if (isMobile) {
+          ctx.fillStyle = 'rgba(255,0,0,0.4)'; ctx.beginPath(); ctx.arc(W - 80, H - 80, 50, 0, Math.PI*2); ctx.fill();
+          ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.stroke();
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText("💣", W - 80, H - 80);
       }
-      
-      ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace';
-      ctx.fillText(`BOMBAS: ${bombs} [X]`, 100, 150);
+
+      // HUD
+      ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40); ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
+      let hpWidth = 600 * (boss.hp / boss.maxHp); ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0'; ctx.fillRect(100, 40, hpWidth, 40);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center"; ctx.fillText(`TINTINTLEIRO - NÍVEL ${currentLevel}`, W/2, 70);
+      ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
+      if (player.lives > 10) ctx.fillText(`VIDAS: ❤ x ${player.lives}`, 100, 120);
+      else ctx.fillText("VIDAS: " + "❤".repeat(player.lives), 100, 120);
+      ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`BOMBAS: ${bombs} [X]`, 100, 150);
     }
 
     // Aviso da Metralhadora
     if (machineGunEvent === 1) {
       ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
       ctx.save(); ctx.translate(Math.random()*30-15, Math.random()*30-15); ctx.textAlign = 'center';
-      ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
-      ctx.fillText("CRAZY CHINESE", W/2, H/2 - 40);
-      ctx.fillText("MACHINEGUN!!!11!!!!", W/2, H/2 + 40);
-      for(let i=0; i<15; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? '#ff0' : '#fff';
-        ctx.font = `bold ${20 + Math.random()*50}px sans-serif`;
-        ctx.fillText("DUDUDUDUDU", Math.random()*W, Math.random()*H);
-      }
+      ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText("CRAZY CHINESE", W/2, H/2 - 40); ctx.fillText("MACHINEGUN!!!11!!!!", W/2, H/2 + 40);
+      for(let i=0; i<15; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#ff0' : '#fff'; ctx.font = `bold ${20 + Math.random()*50}px sans-serif`; ctx.fillText("DUDUDUDUDU", Math.random()*W, Math.random()*H); }
       ctx.restore();
     }
 
@@ -613,32 +648,17 @@ function draw() {
     if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
       ctx.save(); ctx.translate(Math.random()*20-10, Math.random()*20-10); ctx.textAlign = 'center';
-      
       if (gameState === 'levelCleared') {
-        ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif';
-        ctx.fillText("VITÓRIA", W/2, H/2 - 100);
-        for(let i=0; i<20; i++) {
-          ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff';
-          ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`;
-          ctx.fillText("VITÓRIA", Math.random()*W, Math.random()*H);
-        }
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 40px monospace';
-        ctx.fillText("Aperte Z para continuar", W/2, H - 100);
+        ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText("VITÓRIA", W/2, H/2 - 100);
+        for(let i=0; i<20; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff'; ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`; ctx.fillText("VITÓRIA", Math.random()*W, Math.random()*H); }
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 40px monospace'; ctx.fillText("Toque/Aperte Z para continuar", W/2, H - 100);
       } else if (gameState === 'gameWin') {
-        ctx.fillStyle = '#0f0'; ctx.font = 'bold 70px Impact, sans-serif';
-        ctx.fillText("VOCÊ VENCEU O INFERNO!", W/2, H/2 - 100);
-        for(let i=0; i<25; i++) {
-          ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff';
-          ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`;
-          ctx.fillText(glitchText[Math.floor(Math.random() * glitchText.length)], Math.random()*W, Math.random()*H);
-        }
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace';
-        ctx.fillText("Aperte R para voltar ao Menu", W/2, H - 100);
+        ctx.fillStyle = '#0f0'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText("VOCÊ VENCEU O INFERNO!", W/2, H/2 - 100);
+        for(let i=0; i<25; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff'; ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`; ctx.fillText(glitchText[Math.floor(Math.random() * glitchText.length)], Math.random()*W, Math.random()*H); }
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText("Toque/Aperte R para voltar", W/2, H - 100);
       } else {
-        ctx.fillStyle = '#f00'; ctx.font = 'bold 80px Impact, sans-serif';
-        ctx.fillText("VOCÊ MORREU", W/2, H/2 - 50);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace';
-        ctx.fillText("Aperte R para voltar ao Menu", W/2, H/2 + 50);
+        ctx.fillStyle = '#f00'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText("VOCÊ MORREU", W/2, H/2 - 50);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText("Toque/Aperte R para voltar", W/2, H/2 + 50);
       }
       ctx.restore();
     }
@@ -646,15 +666,7 @@ function draw() {
   ctx.restore();
 }
 
-// ==========================================
-// GAME LOOP
-// ==========================================
-function gameLoop() {
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
-}
-
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
 gameLoop();
 </script>
 </body>
