@@ -123,8 +123,10 @@ const bgCanvas = document.createElement('canvas');
 bgCanvas.width = W; bgCanvas.height = H;
 const bgCtx = bgCanvas.getContext('2d');
 const chineseChars = ["死亡", "地獄", "血", "恐怖", "中國", "雷", "電", "必殺", "狂気", "紅色", "神", "魔", "殺", "死"];
+const chinaStars = []; // Array estático para as estrelas não tremerem
 
 function generateBackground() {
+  // Fundo Chinês Original
   bgCtx.fillStyle = '#050000';
   bgCtx.fillRect(0, 0, W, H);
   bgCtx.textAlign = "center";
@@ -137,6 +139,15 @@ function generateBackground() {
     bgCtx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
     bgCtx.font = `bold ${size}px "Noto Sans CJK SC", sans-serif`;
     bgCtx.fillText(text, x, y);
+  }
+
+  // Gerar estrelas da bandeira UMA VEZ SÓ
+  for (let i = 0; i < 25; i++) {
+    chinaStars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        size: 20 + Math.random() * 30
+    });
   }
 }
 generateBackground();
@@ -271,7 +282,7 @@ function setupLevel(level) {
   
   gameState = 'playing'; 
   invulnerable = 0; 
-  screenShake = 0; // Garante que o tremor zera ao começar
+  screenShake = 0; 
   bombs = 3; bombCooldown = 0;
   machineGunEvent = 0; machineGunTimer = 0;
   extraLives = [];
@@ -322,9 +333,8 @@ function handleAction(action) {
         if (action === 'select' && currentLevel < 6) setupLevel(currentLevel + 1);
     } else if (gameState === 'gameOver' || gameState === 'gameWin') {
         if (action === 'select') { 
-            gameState = 'menu'; 
-            resetAudio(); 
-            screenShake = 0; // MATA O TREMOR PRA SEMPRE AQUI
+            // SUA IDEIA: Recarrega a página inteira para limpar o bug 100%
+            window.location.reload(); 
         }
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
@@ -408,9 +418,8 @@ canvas.addEventListener('pointercancel', () => isDragging = false);
 // UPDATE (LÓGICA)
 // ==========================================
 function update() {
-  // Trava de segurança máxima: Se não estiver jogando, o tremor DEVE ser zero.
   if (gameState !== 'playing') {
-      screenShake = 0;
+      screenShake = 0; 
   }
 
   if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
@@ -424,7 +433,7 @@ function update() {
   if (gameState !== 'playing') return;
   
   if (bombCooldown > 0) bombCooldown--;
-  if (screenShake > 0) screenShake--; // Isso agora só roda durante o jogo
+  if (screenShake > 0) screenShake--; 
 
   currentRunTime = (performance.now() - gameStartTime) / 1000;
 
@@ -527,7 +536,7 @@ function update() {
       player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
       if (player.lives <= 0) {
           gameState = 'gameOver';
-          screenShake = 0; // Zera na hora da morte
+          screenShake = 0; 
       }
       break;
     }
@@ -544,7 +553,7 @@ function update() {
         player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
         if (player.lives <= 0) {
             gameState = 'gameOver';
-            screenShake = 0; // Zera na hora da morte
+            screenShake = 0; 
         }
       }
     }
@@ -558,18 +567,22 @@ function update() {
 function draw() {
   ctx.save();
   
-  // O TREMOR SÓ ACONTECE SE ESTIVER JOGANDO (gameState === 'playing')
   if (screenShake > 0 && gameState === 'playing') {
       ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
   }
 
-  // Fundo
   if (bgTheme === 0) ctx.drawImage(bgCanvas, 0, 0);
   else if (bgTheme === 1) { ctx.fillStyle = '#000'; ctx.fillRect(-50, -50, W + 100, H + 100); }
   else if (bgTheme === 2) {
     ctx.fillStyle = '#DE2910'; ctx.fillRect(-50, -50, W + 100, H + 100);
     ctx.fillStyle = '#FFDE00';
-    for(let i=0; i<25; i++) { ctx.font = `bold ${20 + Math.random()*30}px Arial`; ctx.fillText("★", Math.random()*W, Math.random()*H); }
+    
+    // AGORA AS ESTRELAS SÃO FIXAS (Não tremem mais no fundo)
+    for(let i=0; i<chinaStars.length; i++) {
+        let s = chinaStars[i];
+        ctx.font = `bold ${s.size}px Arial`;
+        ctx.fillText("★", s.x, s.y);
+    }
   }
 
   // Botão de Idioma
@@ -721,7 +734,6 @@ function draw() {
           ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("💣", W - 80, H - 80);
       }
 
-      // HUD
       ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40); ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
       let hpWidth = 600 * (boss.hp / boss.maxHp); ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0'; ctx.fillRect(100, 40, hpWidth, 40);
       ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center"; ctx.fillText(`TINTINTLEIRO - ${t('level')} ${currentLevel}`, W/2, 70);
@@ -745,8 +757,6 @@ function draw() {
 
     if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
-      
-      // REMOVIDO O TREMOR DO TEXTO AQUI
       ctx.textAlign = 'center';
       
       if (gameState === 'levelCleared') {
