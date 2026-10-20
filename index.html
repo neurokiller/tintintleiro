@@ -1,178 +1,561 @@
-// =========================================================
-// PATCH FINAL: MENU PRINCIPAL E OPÇÕES DE FUNDO
-// =========================================================
-let currentScreen = 'menu'; // 'menu', 'options', 'playing'
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>TINTINTLEIRO - GLÓRIA À CHINA</title>
+<style>
+  body { margin: 0; background: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: monospace; }
+  canvas { border: 4px solid #f00; box-shadow: 0 0 50px #f00; }
+</style>
+</head>
+<body>
+
+<audio id="bgm" src="music.mp3" loop></audio>
+<canvas id="game" width="800" height="900"></canvas>
+
+<script>
+// ==========================================
+// VARIÁVEIS GLOBAIS
+// ==========================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let bgm = document.getElementById('bgm');
+let bossImg = new Image();
+bossImg.src = 'boss.png';
+
+const keys = {};
+let gameState = 'menu'; // 'menu', 'options', 'playing', 'levelCleared', 'gameOver', 'gameWin'
+let currentLevel = 1;
+
+let player, boss, bullets, playerBullets, lasers;
+let invulnerable, screenShake, bombs, bombCooldown;
+let extraLives = [];
+let machineGunEvent = 0;
+let machineGunTimer = 0;
+
+// Opções de Fundo
+let bgTheme = 0; // 0 = Original, 1 = Preto, 2 = Bandeira da China
 let menuIndex = 0;
 let optionIndex = 0;
-let bgTheme = 0; // 0 = Original, 1 = Preto, 2 = Bandeira da China
 
-// Guardando as funções do patch anterior (Metralhadora)
-const mgUpdate = update;
-const mgDraw = draw;
+// Fundo Otimizado
+const bgCanvas = document.createElement('canvas');
+bgCanvas.width = W; bgCanvas.height = H;
+const bgCtx = bgCanvas.getContext('2d');
+const chineseChars = ["死亡", "地獄", "血", "恐怖", "中國", "雷", "電", "必殺", "狂気", "紅色", "神", "魔", "殺", "死"];
 
-// Função para desenhar o fundo escolhido
-function drawMenuBackground() {
-    if (bgTheme === 0) {
-        ctx.drawImage(bgCanvas, 0, 0); // Fundo original chinês
-    } else if (bgTheme === 1) {
-        ctx.fillStyle = '#000000'; // Fundo Preto
-        ctx.fillRect(0, 0, W, H);
-    } else if (bgTheme === 2) {
-        ctx.fillStyle = '#DE2910'; // Vermelho da bandeira da China
-        ctx.fillRect(0, 0, W, H);
-        // Desenhando as estrelas amarelas da bandeira
-        ctx.fillStyle = '#FFDE00';
-        for(let i=0; i<15; i++) {
-            ctx.font = `bold ${20 + Math.random()*40}px Arial`;
-            ctx.fillText("★", Math.random()*W, Math.random()*H);
-        }
-    }
+function generateBackground() {
+  bgCtx.fillStyle = '#050000';
+  bgCtx.fillRect(0, 0, W, H);
+  bgCtx.textAlign = "center";
+  for (let i = 0; i < 180; i++) {
+    let text = chineseChars[Math.floor(Math.random() * chineseChars.length)];
+    let x = Math.random() * W;
+    let y = Math.random() * H;
+    let size = 15 + Math.random() * 45;
+    let alpha = 0.2 + Math.random() * 0.6;
+    bgCtx.fillStyle = `rgba(255, 0, 0, ${alpha})`;
+    bgCtx.font = `bold ${size}px "Noto Sans CJK SC", sans-serif`;
+    bgCtx.fillText(text, x, y);
+  }
+}
+generateBackground();
+
+const glitchText = ["TIN TIN TLOIN", "FIRST EVER!!!!!!!!!!", "GLÓRIA À CHINA", "MORTE", "HELL", "死"];
+
+// ==========================================
+// CONTROLE DE ÁUDIO
+// ==========================================
+function playAudio() {
+  if (bgm && bgm.paused) {
+    bgm.volume = 0.4;
+    bgm.play().catch(e => console.log("Áudio bloqueado:", e));
+  }
 }
 
-// SUBSTITUINDO O UPDATE
-update = function() {
-    if (currentScreen === 'menu') {
-        // Navegação do Menu
-        if (keys['arrowdown'] || keys['s']) { menuIndex = (menuIndex + 1) % 2; keys['arrowdown'] = false; keys['s'] = false; }
-        if (keys['arrowup'] || keys['w']) { menuIndex = (menuIndex + 1) % 2; keys['arrowup'] = false; keys['w'] = false; }
-        
-        // Selecionar
-        if (keys['enter'] || keys['z'] || keys[' ']) {
-            if (menuIndex === 0) {
-                currentScreen = 'playing';
-                initGame(); // Inicia o jogo de verdade
-            } else {
-                currentScreen = 'options';
-            }
-            keys['enter'] = false; keys['z'] = false; keys[' '] = false;
-        }
-        return; // Impede que o jogo rode no fundo
-    }
-
-    if (currentScreen === 'options') {
-        // Navegação das Opções
-        if (keys['arrowdown'] || keys['s']) { optionIndex = (optionIndex + 1) % 4; keys['arrowdown'] = false; keys['s'] = false; }
-        if (keys['arrowup'] || keys['w']) { optionIndex = (optionIndex + 1) % 4; keys['arrowup'] = false; keys['w'] = false; }
-        
-        // Trocar fundo
-        if (keys['enter'] || keys['z'] || keys[' ']) {
-            if (optionIndex === 0) bgTheme = 0;
-            if (optionIndex === 1) bgTheme = 1;
-            if (optionIndex === 2) bgTheme = 2;
-            if (optionIndex === 3) currentScreen = 'menu'; // Voltar
-            
-            // Delay para não bugar
-            keys['enter'] = false; keys['z'] = false; keys[' '] = false;
-        }
-        return;
-    }
-
-    // Se estiver jogando, roda a lógica normal (incluindo a Metralhadora)
-    mgUpdate();
-
-    // Atalho para voltar ao Menu se morrer ou vencer
-    if ((gameOver || gameWin) && keys['r']) {
-        currentScreen = 'menu';
-        keys['r'] = false;
-    }
+function triggerGlitchAudio() {
+  if (!bgm) return;
+  try {
+    bgm.playbackRate = 2.5; 
+    bgm.preservesPitch = false;
+  } catch (e) { console.error(e); }
 }
 
-// SUBSTITUINDO O DRAW
-draw = function() {
-    if (currentScreen === 'menu') {
-        drawMenuBackground();
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(0, 0, W, H);
-        
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#f00';
-        ctx.font = 'bold 70px Impact, sans-serif';
-        ctx.fillText("TINTINTLEIRO", W/2, H/2 - 150);
-
-        ctx.font = 'bold 40px monospace';
-        
-        // Opção 1: Iniciar
-        ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff';
-        ctx.fillText(menuIndex === 0 ? "> INICIAR JOGO <" : "INICIAR JOGO", W/2, H/2);
-        
-        // Opção 2: Opções
-        ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff';
-        ctx.fillText(menuIndex === 1 ? "> OPÇÕES <" : "OPÇÕES", W/2, H/2 + 80);
-
-        ctx.fillStyle = '#ff0';
-        ctx.font = '20px monospace';
-        ctx.fillText("Use as Setas/WASD e aperte Z/Enter", W/2, H - 50);
-        return;
-    }
-
-    if (currentScreen === 'options') {
-        drawMenuBackground();
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(0, 0, W, H);
-        
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#f00';
-        ctx.font = 'bold 50px Impact, sans-serif';
-        ctx.fillText("OPÇÕES", W/2, 150);
-
-        ctx.font = 'bold 30px monospace';
-        
-        // Fundo Original
-        ctx.fillStyle = optionIndex === 0 ? '#0f0' : '#fff';
-        ctx.fillText((optionIndex === 0 ? "> " : "") + "Fundo Original" + (bgTheme === 0 ? " [X]" : ""), W/2, 300);
-        
-        // Fundo Preto
-        ctx.fillStyle = optionIndex === 1 ? '#0f0' : '#fff';
-        ctx.fillText((optionIndex === 1 ? "> " : "") + "Fundo Preto" + (bgTheme === 1 ? " [X]" : ""), W/2, 380);
-        
-        // Fundo China
-        ctx.fillStyle = optionIndex === 2 ? '#0f0' : '#fff';
-        ctx.fillText((optionIndex === 2 ? "> " : "") + "Bandeira da China" + (bgTheme === 2 ? " [X]" : ""), W/2, 460);
-        
-        // Voltar
-        ctx.fillStyle = optionIndex === 3 ? '#0f0' : '#fff';
-        ctx.fillText((optionIndex === 3 ? "> " : "") + "Voltar", W/2, 600);
-
-        return;
-    }
-
-    // Se estiver jogando, roda o desenho normal (Metralhadora, Vidas, etc)
-    // Mas substitui o fundo original pelo tema escolhido!
-    if (currentScreen === 'playing') {
-        // Truque de mestre: Desenhamos o fundo escolhido ANTES do jogo rodar
-        drawMenuBackground(); 
-        
-        // Aqui chamamos o draw original, mas ele vai desenhar o bgCanvas por cima...
-        // Para evitar isso, a função mgDraw precisa ser adaptada.
-        mgDraw();
-    }
+function resetAudio() {
+  if (!bgm) return;
+  try {
+    bgm.playbackRate = 1.0;
+    bgm.preservesPitch = true;
+  } catch (e) { console.error(e); }
 }
 
-// Precisamos garantir que o fundo original não seja desenhado por cima se não for o tema 0
-// Vamos interceptar o desenho do bgCanvas
-const originalDrawImage = CanvasRenderingContext2D.prototype.drawImage;
-CanvasRenderingContext2D.prototype.drawImage = function(img, ...args) {
-    // Se estivermos jogando e o fundo NÃO for o original, ignoramos o bgCanvas
-    if (currentScreen === 'playing' && bgTheme !== 0 && img === bgCanvas) {
-        return; 
-    }
-    return originalDrawImage.apply(this, [img, ...args]);
-};
+// ==========================================
+// FUNÇÕES DO JOGO
+// ==========================================
+function setupLevel(level) {
+  currentLevel = level;
+  let bossHp = 1500 + (level * 800); 
+  
+  player = { x: W/2, y: H - 100, r: 3, speed: 8, cooldown: 0, lives: 3 };
+  boss = { x: W/2, y: 200, r: 80, hp: bossHp, maxHp: bossHp, timer: 0 };
+  bullets = []; playerBullets = []; lasers = [];
+  
+  gameState = 'playing'; 
+  invulnerable = 0; 
+  screenShake = 0;
+  bombs = 3; 
+  bombCooldown = 0;
+  
+  machineGunEvent = 0;
+  machineGunTimer = 0;
+  extraLives = [];
+  
+  resetAudio();
+}
 
-// =========================================================
-// INICIANDO O JOGO PELO MENU
-// =========================================================
-// Removemos o startScreen antigo para usar o nosso Menu
-document.getElementById('startScreen').style.display = 'none';
+function initGame() {
+  setupLevel(1);
+  playAudio();
+}
 
-// Precisamos iniciar o áudio no primeiro clique (Política dos Navegadores)
-window.addEventListener('click', () => {
-    bgm = document.getElementById('bgm');
-    if (bgm && bgm.paused) {
-        bgm.volume = 0.4;
-        bgm.play().catch(e => console.log("Erro no áudio:", e));
+// Controle de Teclas
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  
+  if (keys[k]) return; // Evita repetição infinita
+  keys[k] = true;
+  
+  // --- MENU PRINCIPAL ---
+  if (gameState === 'menu') {
+    if (k === 'arrowdown' || k === 's' || k === 'arrowup' || k === 'w') {
+      menuIndex = menuIndex === 0 ? 1 : 0;
     }
+    if (k === 'z' || k === 'enter' || k === ' ') {
+      if (menuIndex === 0) {
+        initGame();
+      } else {
+        gameState = 'options';
+      }
+    }
+  }
+  
+  // --- OPÇÕES ---
+  else if (gameState === 'options') {
+    if (k === 'arrowdown' || k === 's') optionIndex = (optionIndex + 1) % 4;
+    if (k === 'arrowup' || k === 'w') optionIndex = (optionIndex + 3) % 4;
+    
+    if (k === 'z' || k === 'enter' || k === ' ') {
+      if (optionIndex === 0) bgTheme = 0;
+      if (optionIndex === 1) bgTheme = 1;
+      if (optionIndex === 2) bgTheme = 2;
+      if (optionIndex === 3) gameState = 'menu';
+    }
+  }
+  
+  // --- JOGANDO ---
+  else if (gameState === 'playing') {
+    if (k === 'x' && bombs > 0 && bombCooldown <= 0) {
+      bombs--;
+      bullets = []; lasers = [];
+      boss.hp -= 300; 
+      screenShake = 30;
+      bombCooldown = 30;
+    }
+  }
+  
+  // --- AVANÇAR NÍVEL ---
+  else if (gameState === 'levelCleared') {
+    if (k === 'z' || k === 'enter' || k === ' ') {
+      if (currentLevel < 6) {
+        setupLevel(currentLevel + 1);
+      }
+    }
+  }
+  
+  // --- REINICIAR / MENU (GAME OVER / WIN) ---
+  else if (gameState === 'gameOver' || gameState === 'gameWin') {
+    if (k === 'r') {
+      gameState = 'menu';
+      resetAudio();
+    }
+  }
 });
 
-// Inicia o Loop
+window.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+// ==========================================
+// UPDATE (LÓGICA)
+// ==========================================
+function update() {
+  if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
+
+  if (machineGunEvent === 1) {
+    machineGunTimer--;
+    screenShake = 50;
+    if (machineGunTimer <= 0) {
+      machineGunEvent = 2;
+      machineGunTimer = 240; // 4 segundos
+    }
+    return; 
+  }
+
+  if (gameState !== 'playing') return;
+  if (bombCooldown > 0) bombCooldown--;
+
+  // Movimento Jogador
+  if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
+  if (keys['arrowright'] || keys['d']) player.x += player.speed;
+  if (keys['arrowup'] || keys['w']) player.y -= player.speed;
+  if (keys['arrowdown'] || keys['s']) player.y += player.speed;
+  player.x = Math.max(20, Math.min(W - 20, player.x));
+  player.y = Math.max(20, Math.min(H - 20, player.y));
+
+  if (player.cooldown > 0) player.cooldown--;
+
+  // Tiro do Jogador
+  if ((keys['z'] || keys[' ']) && player.cooldown <= 0) {
+    playerBullets.push({ x: player.x, y: player.y - 20, r: 5, vy: -18, damage: 25 });
+    player.cooldown = 4;
+  }
+
+  // Movimento Boss
+  let speedMult = 1 + (currentLevel * 0.15);
+  boss.x = W/2 + Math.sin(boss.timer / (80 / speedMult)) * 200;
+  boss.y = 200 + Math.cos(boss.timer / (100 / speedMult)) * 50;
+  boss.timer++;
+
+  // Dificuldade
+  let fireRate = Math.max(8, 25 - (currentLevel * 2)); 
+  let bulletSpeed = 3.5 + (currentLevel * 0.4);
+  let laserRate = Math.max(80, 220 - (currentLevel * 25));
+
+  // Atirar Balas (Normal)
+  if (machineGunEvent === 0 && boss.timer % Math.floor(fireRate) === 0) {
+    const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+    let spread = Math.min(4, 1 + Math.floor(currentLevel / 2)); 
+    for(let i = -spread; i <= spread; i++) {
+      bullets.push({
+        x: boss.x, y: boss.y, 
+        vx: Math.cos(angle + i * 0.2) * bulletSpeed,
+        vy: Math.sin(angle + i * 0.2) * bulletSpeed,
+        r: 10, color: ['#0f0', '#f00', '#ff0', '#00f', '#ffa500'][Math.floor(Math.random() * 5)]
+      });
+    }
+  }
+
+  // Laser (Normal)
+  if (machineGunEvent === 0 && boss.timer % Math.floor(laserRate) === 0) {
+    const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+    lasers.push({ angle: angle, life: 70, warning: 40 });
+    if (currentLevel === 6) lasers.push({ angle: angle + Math.PI/4, life: 70, warning: 40 });
+  }
+
+  // Sorteio da Metralhadora Maluca
+  if (machineGunEvent === 0 && Math.random() < 0.0005) { // Chance levemente aumentada
+    machineGunEvent = 1;
+    machineGunTimer = 120; 
+    bullets = []; lasers = [];
+  }
+
+  // Lógica da Metralhadora em Ação
+  if (machineGunEvent === 2) {
+    machineGunTimer--;
+    
+    if (machineGunTimer % 2 === 0) {
+      for (let i = 0; i < 8; i++) {
+        let a = Math.random() * Math.PI * 2;
+        bullets.push({ 
+          x: boss.x, y: boss.y, 
+          vx: Math.cos(a) * 8, vy: Math.sin(a) * 8, 
+          r: 8, color: '#f00' 
+        });
+      }
+    }
+
+    // CHUVA DE VIDAS EXTRAS (MUITO MAIS RÁPIDO)
+    if (Math.random() < 0.8 && extraLives.length < 100) { 
+      extraLives.push({
+        x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30,
+        r: 20, floatOffset: Math.random() * Math.PI * 2
+      });
+    }
+
+    // Coletar Vidas Extras
+    for (let i = extraLives.length - 1; i >= 0; i--) {
+      let el = extraLives[i];
+      el.floatOffset += 0.1;
+      let dx = el.x - player.x; let dy = el.y - player.y;
+      if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) {
+        player.lives += 5; // CADA CORAÇÃO DÁ +5 VIDAS!
+        extraLives.splice(i, 1);
+      }
+    }
+
+    if (machineGunTimer <= 0) {
+      machineGunEvent = 0;
+      extraLives = [];
+    }
+  }
+
+  if (invulnerable > 0) invulnerable--;
+  if (screenShake > 0) screenShake--;
+
+  // Colisão Tiros no Boss
+  for (let i = playerBullets.length - 1; i >= 0; i--) {
+    let pb = playerBullets[i];
+    if (!pb) continue;
+    pb.y += pb.vy;
+    let dx = pb.x - boss.x; let dy = pb.y - boss.y;
+    if (dx*dx + dy*dy < (boss.r + pb.r)*(boss.r + pb.r)) {
+      boss.hp -= pb.damage; 
+      playerBullets.splice(i, 1);
+      if (boss.hp <= 0) { 
+        boss.hp = 0; 
+        gameState = (currentLevel === 6) ? 'gameWin' : 'levelCleared';
+        triggerGlitchAudio(); 
+      }
+    } else if (pb.y < 0) {
+      playerBullets.splice(i, 1);
+    }
+  }
+
+  // Colisão Balas no Jogador
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    let b = bullets[i];
+    if (!b) continue;
+    b.x += b.vx; b.y += b.vy;
+    let dx = b.x - player.x; let dy = b.y - player.y;
+    if (invulnerable <= 0 && dx*dx + dy*dy < (b.r + player.r)*(b.r + player.r)) {
+      player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
+      if (player.lives <= 0) gameState = 'gameOver';
+      break;
+    }
+    if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
+  }
+
+  // Colisão Lasers
+  for (let i = lasers.length - 1; i >= 0; i--) {
+    let l = lasers[i];
+    if (!l) continue;
+    l.life--; l.warning--;
+    if (l.warning <= 0 && invulnerable <= 0) {
+      let dist = Math.abs((player.x - boss.x) * Math.sin(l.angle) - (player.y - boss.y) * Math.cos(l.angle));
+      if (dist < 25) {
+        player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
+        if (player.lives <= 0) gameState = 'gameOver';
+      }
+    }
+    if (l.life <= 0) lasers.splice(i, 1);
+  }
+}
+
+// ==========================================
+// DRAW (RENDERIZAÇÃO)
+// ==========================================
+function draw() {
+  ctx.save();
+  if (screenShake > 0) ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+
+  // 1. Fundo
+  if (bgTheme === 0) {
+    ctx.drawImage(bgCanvas, 0, 0);
+  } else if (bgTheme === 1) {
+    ctx.fillStyle = '#000000'; ctx.fillRect(-50, -50, W + 100, H + 100);
+  } else if (bgTheme === 2) {
+    ctx.fillStyle = '#DE2910'; ctx.fillRect(-50, -50, W + 100, H + 100);
+    ctx.fillStyle = '#FFDE00';
+    for(let i=0; i<25; i++) {
+      ctx.font = `bold ${20 + Math.random()*30}px Arial`;
+      ctx.fillText("★", Math.random()*W, Math.random()*H);
+    }
+  }
+
+  // 2. Menus
+  if (gameState === 'menu') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
+    ctx.fillText("TINTINTLEIRO", W/2, H/2 - 150);
+
+    ctx.font = 'bold 40px monospace';
+    ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff';
+    ctx.fillText(menuIndex === 0 ? "> INICIAR JOGO <" : "INICIAR JOGO", W/2, H/2);
+    ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff';
+    ctx.fillText(menuIndex === 1 ? "> OPÇÕES <" : "OPÇÕES", W/2, H/2 + 80);
+
+    ctx.fillStyle = '#ff0'; ctx.font = '20px monospace';
+    ctx.fillText("Use as Setas/WASD e aperte Z para selecionar", W/2, H - 50);
+  } 
+  else if (gameState === 'options') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
+    ctx.fillText("OPÇÕES", W/2, 150);
+
+    ctx.font = 'bold 30px monospace';
+    ctx.fillStyle = optionIndex === 0 ? '#0f0' : '#fff';
+    ctx.fillText((optionIndex === 0 ? "> " : "") + "Fundo Original" + (bgTheme === 0 ? " [X]" : ""), W/2, 300);
+    ctx.fillStyle = optionIndex === 1 ? '#0f0' : '#fff';
+    ctx.fillText((optionIndex === 1 ? "> " : "") + "Fundo Preto" + (bgTheme === 1 ? " [X]" : ""), W/2, 380);
+    ctx.fillStyle = optionIndex === 2 ? '#0f0' : '#fff';
+    ctx.fillText((optionIndex === 2 ? "> " : "") + "Bandeira da China" + (bgTheme === 2 ? " [X]" : ""), W/2, 460);
+    ctx.fillStyle = optionIndex === 3 ? '#0f0' : '#fff';
+    ctx.fillText((optionIndex === 3 ? "> " : "") + "Voltar", W/2, 600);
+  } 
+  
+  // 3. Jogo
+  else {
+    if (gameState !== 'gameOver' && gameState !== 'gameWin') {
+      // Boss
+      ctx.save(); ctx.translate(boss.x, boss.y);
+      if (bossImg.complete && bossImg.naturalWidth !== 0) {
+        ctx.drawImage(bossImg, -boss.r, -boss.r, boss.r * 2, boss.r * 2);
+      } else {
+        ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#ff0000';
+      ctx.beginPath(); ctx.arc(-30, -20, 10, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(30, -20, 10, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // Lasers
+      for (let l of lasers) {
+        const eyeX = boss.x + (Math.cos(l.angle) > 0 ? 30 : -30);
+        const eyeY = boss.y - 20;
+        if (l.warning > 0) {
+          ctx.strokeStyle = `rgba(255, 0, 0, ${Math.random() * 0.6 + 0.2})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
+        } else {
+          ctx.strokeStyle = '#f00'; ctx.lineWidth = 30;
+          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 10;
+          ctx.beginPath(); ctx.moveTo(eyeX, eyeY); ctx.lineTo(eyeX + Math.cos(l.angle) * 2000, eyeY + Math.sin(l.angle) * 2000); ctx.stroke();
+        }
+      }
+
+      // Tiros e Balas
+      for (let pb of playerBullets) {
+        ctx.fillStyle = '#0ff'; ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+      }
+      for (let b of bullets) {
+        ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+      }
+
+      // Vidas Extras (Corações gigantes)
+      if (machineGunEvent === 2) {
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (let el of extraLives) {
+          let floatY = el.y + Math.sin(el.floatOffset) * 5;
+          ctx.fillStyle = '#0f0'; ctx.font = 'bold 40px Arial';
+          ctx.fillText("❤", el.x, floatY);
+          ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(el.x, floatY, 20, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+
+      // Jogador
+      ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(-Math.PI / 8);
+      if (invulnerable > 0 && Math.floor(boss.timer / 5) % 2 === 0) ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.ellipse(0, 12, 12, 16, 0, 0, Math.PI*2); ctx.fill(); 
+      ctx.fillStyle = '#D2B48C'; ctx.fillRect(-4, -30, 8, 35); 
+      ctx.fillStyle = '#8B4513'; ctx.fillRect(-6, -36, 12, 8); 
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; 
+      ctx.beginPath(); ctx.moveTo(-2, -35); ctx.lineTo(-2, 20); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(2, -35); ctx.lineTo(2, 20); ctx.stroke();
+      ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 12, 3, 0, Math.PI*2); ctx.fill(); 
+      ctx.restore();
+
+      // HUD
+      ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40);
+      ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
+      let hpWidth = 600 * (boss.hp / boss.maxHp);
+      ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0';
+      ctx.fillRect(100, 40, hpWidth, 40);
+      
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center";
+      ctx.fillText(`TINTINTLEIRO - NÍVEL ${currentLevel}`, W/2, 70);
+      
+      // HUD DE VIDAS INTELIGENTE (Se passar de 10, vira texto)
+      ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
+      if (player.lives > 10) {
+          ctx.fillText(`VIDAS: ❤ x ${player.lives}`, 100, 120);
+      } else {
+          ctx.fillText("VIDAS: " + "❤".repeat(player.lives), 100, 120);
+      }
+      
+      ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace';
+      ctx.fillText(`BOMBAS: ${bombs} [X]`, 100, 150);
+    }
+
+    // Aviso da Metralhadora
+    if (machineGunEvent === 1) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.translate(Math.random()*30-15, Math.random()*30-15); ctx.textAlign = 'center';
+      ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif';
+      ctx.fillText("CRAZY CHINESE", W/2, H/2 - 40);
+      ctx.fillText("MACHINEGUN!!!11!!!!", W/2, H/2 + 40);
+      for(let i=0; i<15; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#ff0' : '#fff';
+        ctx.font = `bold ${20 + Math.random()*50}px sans-serif`;
+        ctx.fillText("DUDUDUDUDU", Math.random()*W, Math.random()*H);
+      }
+      ctx.restore();
+    }
+
+    // Telas de Fim
+    if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.translate(Math.random()*20-10, Math.random()*20-10); ctx.textAlign = 'center';
+      
+      if (gameState === 'levelCleared') {
+        ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif';
+        ctx.fillText("VITÓRIA", W/2, H/2 - 100);
+        for(let i=0; i<20; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff';
+          ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`;
+          ctx.fillText("VITÓRIA", Math.random()*W, Math.random()*H);
+        }
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 40px monospace';
+        ctx.fillText("Aperte Z para continuar", W/2, H - 100);
+      } else if (gameState === 'gameWin') {
+        ctx.fillStyle = '#0f0'; ctx.font = 'bold 70px Impact, sans-serif';
+        ctx.fillText("VOCÊ VENCEU O INFERNO!", W/2, H/2 - 100);
+        for(let i=0; i<25; i++) {
+          ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff';
+          ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`;
+          ctx.fillText(glitchText[Math.floor(Math.random() * glitchText.length)], Math.random()*W, Math.random()*H);
+        }
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace';
+        ctx.fillText("Aperte R para voltar ao Menu", W/2, H - 100);
+      } else {
+        ctx.fillStyle = '#f00'; ctx.font = 'bold 80px Impact, sans-serif';
+        ctx.fillText("VOCÊ MORREU", W/2, H/2 - 50);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace';
+        ctx.fillText("Aperte R para voltar ao Menu", W/2, H/2 + 50);
+      }
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+// ==========================================
+// GAME LOOP
+// ==========================================
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
 gameLoop();
+</script>
+</body>
+</html>
