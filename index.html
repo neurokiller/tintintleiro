@@ -31,10 +31,9 @@ const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97q
 
 let leaderboardData = []; 
 let isSavingScore = false;
-let leaderboardTab = 0; // 0 = Menor Tempo, 1 = Mais Vitórias, 2 = Recentes
-let selectedRow = 0;
-let speedFilter = "ALL"; 
-const speedOptions = ["ALL", "1", "2", "5", "10", "25", "50", "99", "0.5", "0.05"];
+let leaderboardTab = 0; 
+let selectedRow = -1; // -1 significa que o filtro está selecionado
+let speedFilter = -1; // -1 significa "TODOS"
 
 // ==========================================
 // VARIÁVEIS DE CONFIGURAÇÃO
@@ -58,7 +57,6 @@ let initialSeed = 0;
 let rngState = 0;
 let replayPath = [];
 let replayBombs = [];
-let currentReplay = null;
 
 function rand() {
     rngState = (rngState * 1664525 + 1013904223) % 4294967296;
@@ -98,12 +96,12 @@ const i18n = {
         gameSpeed: "Game Speed", back: "Back", useArrows: "< Hold > to change",
         tabFast: "FASTEST TIME", tabWins: "MOST WINS", tabRecent: "RECENT RUNS",
         name: "NAME", time: "TIME", speed: "SPEED", mGuns: "M.GUNS", date: "DATE", wins: "WINS",
-        loading: "Loading...", noRecords: "No records yet...", configApi: "Configure JSONBin in code.", return: "Tap / Press Z to return",
+        loading: "Loading...", noRecords: "No records yet...", configApi: "Configure JSONBin in code.", return: "Press Z to return",
         youWin: "YOU WIN", survived: "YOU SURVIVED HELL!", youDied: "YOU DIED",
         yourName: "YOUR NAME:", enterName: "Type name and press ENTER", timeLabel: "TIME:",
         level: "LEVEL", lives: "LIVES:", bombs: "BOMBS:", pressContinue: "Tap / Press Z to continue",
-        select: "Select", replay: "▶ REPLAY", replayMode: "REPLAY MODE", exitReplay: "Tap / Press Z to exit",
-        filter: "FILTER: [ ALL ] (Press C)", filterSpeed: "FILTER: [ {s}x ] (Press C)"
+        select: "Select", replay: "▶ REPLAY", replayMode: "REPLAY MODE", exitReplay: "Press Z to exit",
+        filter: "FILTER: [ ALL ] (< >)", filterSpeed: "FILTER: [ {s}x ] (< >)", controls: "[ ENTER ] REPLAY  |  [ Z ] BACK"
     },
     pt: {
         start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
@@ -112,12 +110,12 @@ const i18n = {
         gameSpeed: "Velocidade", back: "Voltar", useArrows: "< Segure > para mudar",
         tabFast: "MENOR TEMPO", tabWins: "MAIS VITÓRIAS", tabRecent: "RECENTES",
         name: "NOME", time: "TEMPO", speed: "VELOC.", mGuns: "METRA.", date: "DATA", wins: "VITÓRIAS",
-        loading: "Carregando...", noRecords: "Nenhum registro ainda...", configApi: "Configure o JSONBin no código.", return: "Toque / Aperte Z para voltar",
+        loading: "Carregando...", noRecords: "Nenhum registro ainda...", configApi: "Configure o JSONBin no código.", return: "Aperte Z para voltar",
         youWin: "VITÓRIA", survived: "VOCÊ VENCEU O INFERNO!", youDied: "VOCÊ MORREU",
         yourName: "SEU NOME:", enterName: "Digite seu nome e aperte ENTER", timeLabel: "TEMPO:",
         level: "NÍVEL", lives: "VIDAS:", bombs: "BOMBAS:", pressContinue: "Toque / Aperte Z para continuar",
-        select: "Selecionar", replay: "▶ REPLAY", replayMode: "MODO REPLAY", exitReplay: "Toque / Aperte Z para sair",
-        filter: "FILTRO: [ TODOS ] (Aperte C)", filterSpeed: "FILTRO: [ {s}x ] (Aperte C)"
+        select: "Selecionar", replay: "▶ REPLAY", replayMode: "MODO REPLAY", exitReplay: "Aperte Z para sair",
+        filter: "FILTRO: [ TODOS ] (< >)", filterSpeed: "FILTRO: [ {s}x ] (< >)", controls: "[ ENTER ] REPLAY  |  [ Z ] SAIR"
     },
     cn: {
         start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
@@ -126,12 +124,12 @@ const i18n = {
         gameSpeed: "游戏速度", back: "返回", useArrows: "< 按住 > 更改",
         tabFast: "最短时间", tabWins: "最多胜利", tabRecent: "最近比赛",
         name: "名字", time: "时间", speed: "速度", mGuns: "机枪", date: "日期", wins: "胜利",
-        loading: "加载中...", noRecords: "暂无记录...", configApi: "在代码中配置JSONBin。", return: "点击 / 按Z返回",
+        loading: "加载中...", noRecords: "暂无记录...", configApi: "在代码中配置JSONBin。", return: "按Z返回",
         youWin: "胜利", survived: "你在地狱中幸存！", youDied: "你死了",
         yourName: "你的名字:", enterName: "输入名字并回车", timeLabel: "时间:",
         level: "关卡", lives: "生命:", bombs: "炸弹:", pressContinue: "点击 / 按Z继续",
-        select: "选择", replay: "▶ 回放", replayMode: "回放模式", exitReplay: "点击 / 按Z退出",
-        filter: "过滤: [ 全部 ] (按C)", filterSpeed: "过滤: [ {s}x ] (按C)"
+        select: "选择", replay: "▶ 回放", replayMode: "回放模式", exitReplay: "按Z退出",
+        filter: "过滤: [ 全部 ] (< >)", filterSpeed: "过滤: [ {s}x ] (< >)", controls: "[ ENTER ] 回放  |  [ Z ] 返回"
     }
 };
 function t(key, extra) { 
@@ -219,7 +217,7 @@ async function fetchLeaderboard() {
     });
     const data = await res.json();
     leaderboardData = data.record.leaderboard || [];
-    selectedRow = 0;
+    selectedRow = -1; // Foca no filtro por padrão
   } catch (e) { 
     console.error("Erro ao buscar:", e);
     leaderboardData = []; 
@@ -277,29 +275,28 @@ async function saveScore(nome, tempo, speed, mguns) {
 function getLeaderboardList() {
     if (leaderboardTab === 0) {
         let sorted = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999));
-        
-        // O 1º lugar global SEMPRE é salvo independente do filtro
         let globalWR = sorted.length > 0 ? sorted[0] : null;
 
         let filtered = sorted;
-        if (speedFilter !== 'ALL') {
-            let sf = parseFloat(speedFilter);
-            filtered = sorted.filter(run => Math.abs((run.velocidade||1) - sf) < 0.01);
+        if (speedFilter !== -1) {
+            filtered = sorted.filter(run => Math.abs((run.velocidade||1) - speedFilter) < 0.01);
         }
 
-        // Filtra o melhor de cada jogador
         let bestPerPlayer = {};
         let uniqueList = [];
+
+        // Coloca o Global WR sempre no topo
+        if (globalWR) {
+            bestPerPlayer[globalWR.nome] = true;
+            uniqueList.push(globalWR);
+        }
+
+        // Adiciona os melhores tempos da velocidade selecionada
         for (let run of filtered) {
             if (!bestPerPlayer[run.nome]) {
                 bestPerPlayer[run.nome] = true;
                 uniqueList.push(run);
             }
-        }
-
-        // Se o Recorde Global não estiver na lista filtrada, injeta ele no topo
-        if (globalWR && !uniqueList.find(r => r.nome === globalWR.nome && r.tempo === globalWR.tempo && r.velocidade === globalWR.velocidade)) {
-            uniqueList.unshift(globalWR);
         }
 
         return uniqueList.slice(0, 10);
@@ -531,7 +528,7 @@ function handleAction(action) {
     if (gameState === 'menu') {
         if (action === 'up') menuIndex = (menuIndex + 2) % 3;
         if (action === 'down') menuIndex = (menuIndex + 1) % 3;
-        if (action === 'select') {
+        if (action === 'confirm' || action === 'cancel') {
             if (menuIndex === 0) initGame();
             else if (menuIndex === 1) gameState = 'options';
             else if (menuIndex === 2) { gameState = 'leaderboard'; fetchLeaderboard(); }
@@ -540,7 +537,7 @@ function handleAction(action) {
         if (action === 'down') optionIndex = (optionIndex + 1) % 8;
         if (action === 'up') optionIndex = (optionIndex + 7) % 8;
         
-        if (action === 'select') {
+        if (action === 'confirm' || action === 'cancel') {
             if (optionIndex === 0) bgTheme = 0;
             if (optionIndex === 1) bgTheme = 1;
             if (optionIndex === 2) bgTheme = 2;
@@ -552,31 +549,60 @@ function handleAction(action) {
             saveSettings();
         }
     } else if (gameState === 'leaderboard') {
-        if (action === 'left') { leaderboardTab = (leaderboardTab + 2) % 3; selectedRow = 0; }
-        if (action === 'right') { leaderboardTab = (leaderboardTab + 1) % 3; selectedRow = 0; }
-        if (action === 'up') selectedRow = Math.max(0, selectedRow - 1);
+        if (action === 'left') {
+            if (leaderboardTab === 0 && selectedRow === -1) {
+                // Altera a velocidade do filtro
+                if (speedFilter === -1) speedFilter = 30.00;
+                else if (speedFilter <= 0.05) speedFilter = -1;
+                else speedFilter = parseFloat((speedFilter - 0.05).toFixed(2));
+            } else {
+                leaderboardTab = (leaderboardTab + 2) % 3; selectedRow = -1;
+            }
+        }
+        if (action === 'right') {
+            if (leaderboardTab === 0 && selectedRow === -1) {
+                if (speedFilter === -1) speedFilter = 0.05;
+                else if (speedFilter >= 30.00) speedFilter = -1;
+                else speedFilter = parseFloat((speedFilter + 0.05).toFixed(2));
+            } else {
+                leaderboardTab = (leaderboardTab + 1) % 3; selectedRow = -1;
+            }
+        }
+        if (action === 'up') {
+            if (leaderboardTab === 0) {
+                if (selectedRow === 0) selectedRow = -1;
+                else if (selectedRow > 0) selectedRow--;
+            } else {
+                if (selectedRow > 0) selectedRow--;
+            }
+        }
         if (action === 'down') {
             let list = getLeaderboardList();
-            selectedRow = Math.min(list.length - 1, selectedRow + 1);
+            if (leaderboardTab === 0 && selectedRow === -1) selectedRow = 0;
+            else if (selectedRow < list.length - 1) selectedRow++;
         }
-        if (action === 'select') { 
+        if (action === 'confirm') { 
+            if (selectedRow === -1) return; // Filtro não tem ação de confirmar
             let list = getLeaderboardList();
             if (list[selectedRow] && list[selectedRow].replay) {
                 startReplay(list[selectedRow]);
-            } else {
-                gameState = 'menu'; 
             }
         }
+        if (action === 'cancel') { 
+            gameState = 'menu'; 
+        }
     } else if (gameState === 'replay') {
-        if (action === 'select') { 
+        if (action === 'cancel' || action === 'confirm') { 
             gameState = 'leaderboard'; 
             fetchLeaderboard();
-            selectedRow = 0;
+            selectedRow = -1;
         }
     } else if (gameState === 'levelCleared') {
-        if (action === 'select' && currentLevel < 6) setupLevel(currentLevel + 1);
+        if (action === 'confirm' || action === 'cancel') {
+            if (currentLevel < 6) setupLevel(currentLevel + 1);
+        }
     } else if (gameState === 'gameOver' || gameState === 'gameWin') {
-        if (action === 'select') window.location.reload();
+        if (action === 'confirm' || action === 'cancel') window.location.reload();
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
             bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
@@ -608,13 +634,6 @@ window.addEventListener('keydown', e => {
       if (k === 'arrowright' || k === 'd') { changeGameSpeed(1); return; }
   }
 
-  if (gameState === 'leaderboard' && (k === 'c' || k === 'ç')) {
-      let idx = speedOptions.indexOf(speedFilter);
-      speedFilter = speedOptions[(idx + 1) % speedOptions.length];
-      selectedRow = 0;
-      return;
-  }
-
   if (keys[k]) return; 
   keys[k] = true;
   
@@ -636,7 +655,10 @@ window.addEventListener('keydown', e => {
     if (k === 'arrowdown' || k === 's') handleAction('down');
     if (k === 'arrowleft' || k === 'a') handleAction('left');
     if (k === 'arrowright' || k === 'd') handleAction('right');
-    if (k === 'z' || k === 'enter' || k === ' ') handleAction('select');
+    
+    if (k === 'enter' || k === ' ') handleAction('confirm');
+    if (k === 'z' || k === 'escape') handleAction('cancel');
+    
     if (k === 'x') handleAction('bomb');
   }
 });
@@ -662,9 +684,9 @@ canvas.addEventListener('pointerdown', e => {
 
     if (isMobile) {
         if (gameState === 'menu') {
-            if (pos.y > H/2 - 70 && pos.y < H/2 - 10) { menuIndex = 0; handleAction('select'); }
-            else if (pos.y > H/2 && pos.y < H/2 + 60) { menuIndex = 1; handleAction('select'); }
-            else if (pos.y > H/2 + 70 && pos.y < H/2 + 130) { menuIndex = 2; handleAction('select'); }
+            if (pos.y > H/2 - 70 && pos.y < H/2 - 10) { menuIndex = 0; handleAction('confirm'); }
+            else if (pos.y > H/2 && pos.y < H/2 + 60) { menuIndex = 1; handleAction('confirm'); }
+            else if (pos.y > H/2 + 70 && pos.y < H/2 + 130) { menuIndex = 2; handleAction('confirm'); }
         } else if (gameState === 'options') {
             for(let i=0; i<8; i++) {
                 if (pos.y > 180 + i*50 && pos.y < 230 + i*50) { 
@@ -672,41 +694,45 @@ canvas.addEventListener('pointerdown', e => {
                     if (i === 6) {
                         if (pos.x < W / 2) changeGameSpeed(-1);
                         else changeGameSpeed(1);
-                    } else handleAction('select'); 
+                    } else handleAction('confirm'); 
                 }
             }
         } else if (gameState === 'leaderboard') {
             if (pos.y > 120 && pos.y < 160) {
-                // Muda de aba
-                if (pos.x < W/3) { leaderboardTab = 0; selectedRow = 0; }
-                else if (pos.x < 2*W/3) { leaderboardTab = 1; selectedRow = 0; }
-                else { leaderboardTab = 2; selectedRow = 0; }
-            } else if (pos.x > W/2 - 150 && pos.x < W/2 + 150 && pos.y > 170 && pos.y < 200 && leaderboardTab === 0) {
-                // Clica no Filtro
-                let idx = speedOptions.indexOf(speedFilter);
-                speedFilter = speedOptions[(idx + 1) % speedOptions.length];
-                selectedRow = 0;
+                if (pos.x < W/3) { leaderboardTab = 0; selectedRow = -1; }
+                else if (pos.x < 2*W/3) { leaderboardTab = 1; selectedRow = -1; }
+                else { leaderboardTab = 2; selectedRow = -1; }
+            } else if (pos.y > 170 && pos.y < 200 && leaderboardTab === 0) {
+                // Clicou na área do filtro
+                selectedRow = -1;
+                if (pos.x < W/2 - 60) {
+                    // Diminuir velocidade
+                    if (speedFilter === -1) speedFilter = 30.00;
+                    else if (speedFilter <= 0.05) speedFilter = -1;
+                    else speedFilter = parseFloat((speedFilter - 0.05).toFixed(2));
+                } else if (pos.x > W/2 + 60) {
+                    // Aumentar velocidade
+                    if (speedFilter === -1) speedFilter = 0.05;
+                    else if (speedFilter >= 30.00) speedFilter = -1;
+                    else speedFilter = parseFloat((speedFilter + 0.05).toFixed(2));
+                }
+            } else if (pos.y > H - 80 && pos.y < H - 20) {
+                handleAction('cancel'); // Botão de sair
             } else {
-                // Clica na linha
                 let list = getLeaderboardList();
                 for (let i = 0; i < list.length; i++) {
-                    let y = 250 + i * 35;
+                    let y = 260 + i * 35;
                     if (pos.y > y - 20 && pos.y < y + 15) {
                         selectedRow = i;
-                        if (list[i].replay) {
-                            startReplay(list[i]);
-                        } else {
-                            handleAction('select');
-                        }
+                        handleAction('confirm'); 
                         return;
                     }
                 }
-                handleAction('select');
             }
         } else if (gameState === 'replay') {
-            handleAction('select');
+            handleAction('cancel');
         } else if (gameState === 'levelCleared' || gameState === 'gameOver' || gameState === 'gameWin') {
-            handleAction('select');
+            handleAction('confirm');
         } else if (gameState === 'playing') {
             if (pos.x > W - 120 && pos.y > H - 120) handleAction('bomb');
         }
@@ -786,15 +812,23 @@ function update() {
           player.cooldown = 4;
       }
       
-      if (boss.timer % 4 === 0 && replayPath.length < 6000) {
-          replayPath.push(Math.round(player.x), Math.round(player.y), Math.round(boss.hp));
+      if (boss.timer % 4 === 0 && replayPath.length < 10000) {
+          replayPath.push(Math.round(player.x), Math.round(player.y), Math.round(boss.hp), player.lives, bombs);
       }
   } else if (gameState === 'replay') {
-      let idx = Math.floor(boss.timer / 4) * 3;
+      let groupSize = (replayPath.length % 5 === 0 && replayPath.length > 0) ? 5 : 3;
+      let idx = Math.floor(boss.timer / 4) * groupSize;
       if (idx < replayPath.length) {
           player.x = replayPath[idx];
           player.y = replayPath[idx+1];
           boss.hp = replayPath[idx+2];
+          if (groupSize === 5) {
+              player.lives = replayPath[idx+3];
+              bombs = replayPath[idx+4];
+          }
+          if (boss.timer % 4 === 0) {
+              playerBullets.push({ x: player.x, y: player.y - 20, r: 6, vy: -18, damage: 25 });
+          }
       } else {
           gameState = 'leaderboard';
           return;
@@ -1035,12 +1069,12 @@ function draw() {
 
     ctx.fillStyle = '#555'; ctx.font = '16px monospace'; ctx.fillText("< >", W/2, 150);
 
-    // FILTRO DE VELOCIDADE (Apenas na aba de Tempo)
     if (leaderboardTab === 0) {
-        ctx.fillStyle = speedFilter === 'ALL' ? '#ff0' : '#0ff'; 
+        let isSelected = (selectedRow === -1);
+        ctx.fillStyle = isSelected ? '#0f0' : (speedFilter === -1 ? '#ff0' : '#0ff'); 
         ctx.font = 'bold 18px monospace';
-        let filterTxt = speedFilter === 'ALL' ? t('filter') : t('filterSpeed', speedFilter);
-        ctx.fillText(filterTxt, W/2, 180);
+        let filterTxt = speedFilter === -1 ? t('filter') : t('filterSpeed', speedFilter.toFixed(2));
+        ctx.fillText((isSelected ? "> " : "") + filterTxt + (isSelected ? " <" : ""), W/2, 180);
     }
 
     let list = getLeaderboardList();
@@ -1065,7 +1099,6 @@ function draw() {
             for (let i = 0; i < list.length; i++) {
                 let entry = list[i]; let y = 260 + i * 35;
                 
-                // Highlight da linha selecionada
                 if (i === selectedRow) {
                     ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
                     ctx.fillRect(10, y - 22, W - 20, 35);
@@ -1138,8 +1171,9 @@ function draw() {
             }
         }
     }
-    ctx.textAlign = 'center'; ctx.fillStyle = '#0f0'; ctx.font = 'bold 30px monospace'; 
-    ctx.fillText(t('return'), W/2, H - 50);
+    ctx.textAlign = 'center'; 
+    ctx.fillStyle = '#0f0'; ctx.font = 'bold 24px monospace'; 
+    ctx.fillText(t('controls'), W/2, H - 40);
   }
   else if (gameState === 'nameInput') {
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H);
@@ -1216,20 +1250,28 @@ function draw() {
           ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("💣", W - 80, H - 80);
       }
 
-      if (gameState === 'playing') {
+      if (gameState === 'playing' || gameState === 'replay') {
           ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40); ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
-          let hpWidth = 600 * (boss.hp / boss.maxHp); ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0'; ctx.fillRect(100, 40, hpWidth, 40);
-          ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center"; ctx.fillText(`TINTINTLEIRO - ${t('level')} ${currentLevel}`, W/2, 70);
+          let bossMaxHp = (gameState === 'playing') ? boss.maxHp : (1500 + (6 * 800));
+          let hpWidth = 600 * (boss.hp / bossMaxHp); 
+          ctx.fillStyle = boss.hp > (bossMaxHp/2) ? '#f00' : '#ff0'; ctx.fillRect(100, 40, Math.max(0, hpWidth), 40);
+          
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center"; 
+          ctx.fillText(`TINTINTLEIRO - ${t('level')} 6`, W/2, 70);
+          
           ctx.textAlign = "right"; ctx.font = 'bold 26px monospace'; ctx.fillStyle = '#0ff';
-          ctx.fillText(`${t('time')} ${currentRunTime.toFixed(2)}s`, W - 30, 130);
+          if (gameState === 'playing') ctx.fillText(`${t('time')} ${currentRunTime.toFixed(2)}s`, W - 30, 130);
+          else if (gameState === 'replay') ctx.fillText(`${t('time')} ${gameSpeed.toFixed(2)}x`, W - 30, 130);
+
           ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
           if (player.lives > 10) ctx.fillText(`${t('lives')} ❤ x ${player.lives}`, 100, 120);
           else ctx.fillText(t('lives') + " " + "❤".repeat(player.lives), 100, 120);
           ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('bombs')} ${bombs} [X]`, 100, 150);
-          if (gameSpeed !== 1.0) { ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace'; ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160); }
-      } else if (gameState === 'replay') {
-          let hpRatio = boss.hp / (1500 + (currentLevel * 800)); 
-          ctx.fillStyle = '#f00'; ctx.fillRect(100, 100, 600 * Math.max(0, hpRatio), 10);
+          
+          if (gameSpeed !== 1.0 && gameState === 'playing') { 
+              ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace'; 
+              ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160); 
+          }
       }
     }
 
