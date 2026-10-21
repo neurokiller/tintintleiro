@@ -333,14 +333,12 @@ function calculateAllPlayers() {
     let players = {}; 
     let globalBestTime = 999999;
     
-    // Acha o recorde mundial do modo história
     leaderboardData.forEach(r => { 
         if ((r.mode === 'story' || !r.mode) && r.tempo && r.tempo < globalBestTime) globalBestTime = r.tempo; 
     });
     
     leaderboardData.forEach(run => {
         if (!players[run.nome]) players[run.nome] = { nome: run.nome, wins: 0, runs: [], bestStory: null, bestArcade: null };
-
         players[run.nome].runs.push(run);
 
         if (run.mode === 'story' || !run.mode) {
@@ -358,9 +356,7 @@ function calculateAllPlayers() {
     
     Object.values(players).forEach(p => {
         let storyPP = 0;
-        if (p.bestStory && p.bestStory.tempo) {
-            storyPP = Math.floor((globalBestTime / p.bestStory.tempo) * 1000);
-        }
+        if (p.bestStory && p.bestStory.tempo) storyPP = Math.floor((globalBestTime / p.bestStory.tempo) * 1000);
         let arcadePP = p.bestArcade ? p.bestArcade.pp : 0;
         let winPP = p.wins * 50;
         
@@ -446,7 +442,9 @@ function setupArcade() {
   arcadeEnemies = []; arcadePickups = []; arcadeBullets = []; playerBullets = []; bombEffects = [];
   arcadeTime = 0; arcadeKills = 0;
   gameState = 'arcade'; invulnerable = 0; screenShake = 0; bombs = 3; bombCooldown = 0;
+  // Centraliza a câmera no jogador
   cameraX = player.x - W/2; cameraY = player.y - H/2;
+  // Seta o alvo do mouse pro centro
   targetX = W/2; targetY = H/2;
   resetAudio(); 
   if (possessedMusicEnabled) togglePossessedMusic(true); else playAudio();
@@ -625,7 +623,7 @@ function update() {
   if (invulnerable > 0) invulnerable--;
 
   // ==========================================
-  // LÓGICA DO MODO HISTÓRIA
+  // LÓGICA DO MODO HISTÓRIA (INTOCÁVEL)
   // ==========================================
   if (gameState === 'playing') {
       if (machineGunEvent === 1) { machineGunTimer--; screenShake = 50; if (machineGunTimer <= 0) { machineGunEvent = 2; machineGunTimer = 240; } return; }
@@ -692,12 +690,14 @@ function update() {
       arcadeTime += (1/60) * gameSpeed;
       currentRunTime = arcadeTime;
 
+      // CONTROLE DE MOVIMENTO (CORRIGIDO)
       if (isMobile || mouseControlEnabled) {
-          // Lógica relativa para o mouse não bugar com a câmera
-          let dx = (targetX - W/2) / (W/2);
-          let dy = (targetY - H/2) / (H/2);
-          if (Math.abs(dx) > 0.1) player.x += dx * player.speed;
-          if (Math.abs(dy) > 0.1) player.y += dy * player.speed;
+          // Transforma o mouse da tela em coordenadas do mundo
+          let worldMouseX = cameraX + targetX;
+          let worldMouseY = cameraY + targetY;
+          // Lerp rápido para "colar" no mouse
+          player.x += (worldMouseX - player.x) * 0.25;
+          player.y += (worldMouseY - player.y) * 0.25;
       } else {
           if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
           if (keys['arrowright'] || keys['d']) player.x += player.speed;
@@ -705,10 +705,14 @@ function update() {
           if (keys['arrowdown'] || keys['s']) player.y += player.speed;
       }
       
-      player.x = Math.max(20, Math.min(WORLD_W - 20, player.x)); player.y = Math.max(20, Math.min(WORLD_H - 20, player.y));
+      player.x = Math.max(20, Math.min(WORLD_W - 20, player.x)); 
+      player.y = Math.max(20, Math.min(WORLD_H - 20, player.y));
 
-      cameraX = Math.max(0, Math.min(WORLD_W - W, player.x - W/2));
-      cameraY = Math.max(0, Math.min(WORLD_H - H, player.y - H/2));
+      // Câmera segue o jogador (com pequeno delay pra suavizar)
+      let targetCamX = Math.max(0, Math.min(WORLD_W - W, player.x - W/2));
+      let targetCamY = Math.max(0, Math.min(WORLD_H - H, player.y - H/2));
+      cameraX += (targetCamX - cameraX) * 0.15;
+      cameraY += (targetCamY - cameraY) * 0.15;
 
       if (player.cooldown > 0) player.cooldown--;
       if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) {
@@ -949,7 +953,24 @@ function draw() {
           ctx.strokeStyle = '#f00'; ctx.lineWidth = 10;
           ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
 
-          for (let p of arcadePickups) { ctx.fillStyle = p.type === 'bomb' ? '#f0f' : '#0f0'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.type === 'bomb' ? "💣" : "❤", p.x, p.y + Math.sin(p.floatOffset) * 5); }
+          // AURAS E ITENS FLUTUANTES
+          for (let p of arcadePickups) { 
+              let floatY = p.y + Math.sin(p.floatOffset) * 5;
+              ctx.save();
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = p.type === 'bomb' ? '#f0f' : '#0f0';
+              ctx.fillStyle = p.type === 'bomb' ? 'rgba(255,0,255,0.4)' : 'rgba(0,255,0,0.4)';
+              ctx.beginPath(); ctx.arc(p.x, floatY, 30, 0, Math.PI*2); ctx.fill();
+              
+              ctx.fillStyle = p.type === 'bomb' ? '#f0f' : '#0f0';
+              ctx.beginPath(); ctx.arc(p.x, floatY, 15, 0, Math.PI*2); ctx.fill();
+              
+              ctx.fillStyle = '#fff'; 
+              ctx.font = 'bold 20px Arial'; 
+              ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; 
+              ctx.fillText(p.type === 'bomb' ? "💣" : "❤", p.x, floatY); 
+              ctx.restore();
+          }
           
           for (let e of arcadeEnemies) {
               ctx.save();
