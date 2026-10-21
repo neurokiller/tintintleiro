@@ -32,7 +32,7 @@ const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97q
 let leaderboardData = []; 
 let usersData = {};
 let isSavingScore = false;
-let leaderboardTab = 0; // 0 = Menor Tempo, 1 = Top Players (PP), 2 = Recentes
+let leaderboardTab = 0; 
 let selectedRow = 0;
 let profilePlayer = "";
 
@@ -43,6 +43,13 @@ let loginPass = "";
 let loginMode = "username"; 
 let loginError = "";
 let pendingScore = null; 
+
+// ARCADE SYSTEM
+const WORLD_W = 1600;
+const WORLD_H = 1800;
+let cameraX = 0, cameraY = 0;
+let arcadeEnemies = [], arcadePickups = [], arcadeBullets = [];
+let arcadeTime = 0, arcadeKills = 0;
 
 // ==========================================
 // VARIÁVEIS DE CONFIGURAÇÃO
@@ -94,46 +101,46 @@ async function hashPassword(password) {
 // ==========================================
 const i18n = {
     en: {
-        start: "START GAME", options: "OPTIONS", leaderboard: "LEADERBOARD", madeBy: "MADE BY NEUROKILLER",
+        start: "START GAME", arcade: "ARCADE MODE", options: "OPTIONS", leaderboard: "LEADERBOARD", madeBy: "MADE BY NEUROKILLER",
         bgOrig: "Original Background", bgBlack: "Black Background", bgChina: "China Flag",
         autoFire: "Auto Fire", possessedMusic: "Possessed Music", mouseCtrl: "Mouse Control", 
         gameSpeed: "Game Speed", back: "Back", useArrows: "< Hold > to change",
         tabFast: "FASTEST TIME", tabPP: "TOP PLAYERS (PP)", tabRecent: "RECENT RUNS",
-        name: "NAME", time: "TIME", speed: "SPEED", mGuns: "M.GUNS", date: "DATE", wins: "WINS", pp: "PP",
+        name: "NAME", time: "TIME", speed: "SPEED", mGuns: "KILLS", date: "DATE", wins: "WINS", pp: "PP",
         loading: "Loading...", noRecords: "No records yet...", configApi: "Configure JSONBin in code.", return: "Tap / Press Z to return",
-        youWin: "YOU WIN", survived: "YOU SURVIVED HELL!", youDied: "YOU DIED",
+        youWin: "YOU WIN", survived: "YOU SURVIVED HELL!", youDied: "YOU DIED", arcadeOver: "ARCADE OVER",
         yourName: "YOUR NAME:", enterName: "Type name and press ENTER", timeLabel: "TIME:",
         level: "LEVEL", lives: "LIVES:", bombs: "BOMBS:", pressContinue: "Tap / Press Z to continue",
         select: "Select", profileTitle: "PLAYER PROFILE", totalPP: "TOTAL PP", totalWins: "TOTAL WINS", runHistory: "RUN HISTORY", rank: "RANK",
-        login: "LOGIN / REGISTER", logout: "LOGOUT", loggedAs: "LOGGED AS:", submit: "SUBMIT", username: "USERNAME:", password: "PASSWORD:", loginErr: "INVALID PASSWORD!", mustLogin: "LOGIN TO SAVE SCORES!", saving: "SAVING SCORE..."
+        login: "LOGIN / REGISTER", logout: "LOGOUT", loggedAs: "LOGGED AS:", submit: "SUBMIT", username: "USERNAME:", password: "PASSWORD:", loginErr: "INVALID PASSWORD!", mustLogin: "LOGIN TO SAVE SCORES!", saving: "SAVING SCORE...", ppEarned: "PP EARNED:"
     },
     pt: {
-        start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
+        start: "INICIAR JOGO", arcade: "MODO ARCADE", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
         bgOrig: "Fundo Original", bgBlack: "Fundo Preto", bgChina: "Bandeira da China",
         autoFire: "Tiro Automatico", possessedMusic: "Musica Possuida", mouseCtrl: "Controle por Mouse", 
         gameSpeed: "Velocidade", back: "Voltar", useArrows: "< Segure > para mudar",
         tabFast: "MENOR TEMPO", tabPP: "TOP PLAYERS (PP)", tabRecent: "RECENTES",
-        name: "NOME", time: "TEMPO", speed: "VELOC.", mGuns: "METRA.", date: "DATA", wins: "VITÓRIAS", pp: "PP",
+        name: "NOME", time: "TEMPO", speed: "VELOC.", mGuns: "KILLS", date: "DATA", wins: "VITÓRIAS", pp: "PP",
         loading: "Carregando...", noRecords: "Nenhum registro ainda...", configApi: "Configure o JSONBin no código.", return: "Toque / Aperte Z para voltar",
-        youWin: "VITÓRIA", survived: "VOCÊ VENCEU O INFERNO!", youDied: "VOCÊ MORREU",
+        youWin: "VITÓRIA", survived: "VOCÊ VENCEU O INFERNO!", youDied: "VOCÊ MORREU", arcadeOver: "FIM DE JOGO",
         yourName: "SEU NOME:", enterName: "Digite seu nome e aperte ENTER", timeLabel: "TEMPO:",
         level: "NÍVEL", lives: "VIDAS:", bombs: "BOMBAS:", pressContinue: "Toque / Aperte Z para continuar",
         select: "Selecionar", profileTitle: "PERFIL DO JOGADOR", totalPP: "PP TOTAL", totalWins: "VITÓRIAS TOTAIS", runHistory: "HISTÓRICO DE RUNS", rank: "RANK",
-        login: "LOGIN / REGISTRAR", logout: "SAIR", loggedAs: "LOGADO COMO:", submit: "ENVIAR", username: "NOME DE USUÁRIO:", password: "SENHA:", loginErr: "SENHA INCORRETA!", mustLogin: "FAÇA LOGIN PARA SALVAR!", saving: "SALVANDO RECORDE..."
+        login: "LOGIN / REGISTRAR", logout: "SAIR", loggedAs: "LOGADO COMO:", submit: "ENVIAR", username: "NOME DE USUÁRIO:", password: "SENHA:", loginErr: "SENHA INCORRETA!", mustLogin: "FAÇA LOGIN PARA SALVAR!", saving: "SALVANDO RECORDE...", ppEarned: "PP GANHOS:"
     },
     cn: {
-        start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
+        start: "开始游戏", arcade: "街机模式", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
         bgOrig: "原始背景", bgBlack: "黑色背景", bgChina: "中国国旗",
         autoFire: "自动射击", possessedMusic: "恶魔音乐", mouseCtrl: "鼠标控制", 
         gameSpeed: "游戏速度", back: "返回", useArrows: "< 按住 > 更改",
         tabFast: "最短时间", tabPP: "顶级玩家 (PP)", tabRecent: "最近比赛",
-        name: "名字", time: "时间", speed: "速度", mGuns: "机枪", date: "日期", wins: "胜利", pp: "PP",
+        name: "名字", time: "时间", speed: "速度", mGuns: "击杀", date: "日期", wins: "胜利", pp: "PP",
         loading: "加载中...", noRecords: "暂无记录...", configApi: "在代码中配置JSONBin。", return: "点击 / 按Z返回",
-        youWin: "胜利", survived: "你在地狱中幸存！", youDied: "你死了",
+        youWin: "胜利", survived: "你在地狱中幸存！", youDied: "你死了", arcadeOver: "街机结束",
         yourName: "你的名字:", enterName: "输入名字并回车", timeLabel: "时间:",
         level: "关卡", lives: "生命:", bombs: "炸弹:", pressContinue: "点击 / 按Z继续",
         select: "选择", profileTitle: "玩家资料", totalPP: "总PP", totalWins: "总胜利", runHistory: "运行记录", rank: "排名",
-        login: "登录 / 注册", logout: "登出", loggedAs: "登录为:", submit: "提交", username: "用户名:", password: "密码:", loginErr: "密码错误！", mustLogin: "登录才能保存分数！", saving: "保存中..."
+        login: "登录 / 注册", logout: "登出", loggedAs: "登录为:", submit: "提交", username: "用户名:", password: "密码:", loginErr: "密码错误！", mustLogin: "登录才能保存分数！", saving: "保存中...", ppEarned: "获得PP:"
     }
 };
 function t(key) { return i18n[lang][key] || key; }
@@ -225,19 +232,18 @@ async function fetchLeaderboard() {
   }
 }
 
-async function saveScore(nome, tempo, speed, mguns) {
+async function saveScore(nome, tempo, speed, mguns, mode = "story") {
   if (isSavingScore || JSONBIN_BIN_ID.includes("COLE_AQUI")) return;
   isSavingScore = true;
   
   try {
-    // TRAVA DE SEGURANÇA: Baixa os dados atuais antes de salvar para não apagar a leaderboard
     const getRes = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
       headers: { 'X-Master-Key': JSONBIN_MASTER_KEY }
     });
     const getData = await getRes.json();
     
     if (!getData.record || !getData.record.leaderboard) {
-        throw new Error("Falha ao baixar leaderboard atual. Save cancelado por segurança.");
+        throw new Error("Falha ao baixar leaderboard atual. Save cancelado.");
     }
 
     let lb = getData.record.leaderboard;
@@ -254,7 +260,8 @@ async function saveScore(nome, tempo, speed, mguns) {
         velocidade: speed, 
         metralhas: mguns, 
         data: dateStr,
-        timestamp: Date.now() 
+        timestamp: Date.now(),
+        mode: mode
     });
     
     if (lb.length > 1000) lb = lb.slice(-1000);
@@ -268,7 +275,7 @@ async function saveScore(nome, tempo, speed, mguns) {
     leaderboardData = lb;
     usersData = us;
   } catch (e) { 
-      console.error("ERRO NO SAVE (Não apagou a leaderboard):", e); 
+      console.error("ERRO NO SAVE:", e); 
   } finally { 
       isSavingScore = false; 
   }
@@ -279,14 +286,11 @@ async function submitLogin() {
     loginError = "";
     
     const hash = await hashPassword(loginPass);
-    
-    // Baixa dados atuais
     const getRes = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, { headers: { 'X-Master-Key': JSONBIN_MASTER_KEY } });
     const getData = await getRes.json();
     let us = getData.record.users || {};
     
     if (!us[loginInput]) {
-        // Registra novo usuário
         us[loginInput] = hash;
         await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
             method: 'PUT',
@@ -298,7 +302,6 @@ async function submitLogin() {
         localStorage.setItem('tintintleiro_user', currentUser);
         gameState = 'menu';
     } else {
-        // Tenta logar
         if (us[loginInput] === hash) {
             usersData = us;
             currentUser = loginInput;
@@ -311,12 +314,11 @@ async function submitLogin() {
     
     loginInput = ""; loginPass = "";
     
-    // Se tinha um score pendente, salva agora
     if (currentUser && pendingScore) {
-        saveScore(currentUser, pendingScore.tempo, pendingScore.speed, pendingScore.mguns);
+        saveScore(currentUser, pendingScore.tempo, pendingScore.speed, pendingScore.mguns, pendingScore.mode);
         pendingScore = null;
         gameState = 'leaderboard';
-        leaderboardTab = 1; // Vai para a aba de PP
+        leaderboardTab = 1;
         fetchLeaderboard();
     }
 }
@@ -325,44 +327,38 @@ async function submitLogin() {
 // CÁLCULO DE PP (PERFORMANCE POINTS)
 // ==========================================
 function calculateAllPlayers() {
-    let players = {};
-    let globalBestTime = 999999;
-    
-    // Acha o recorde mundial
-    leaderboardData.forEach(r => { if (r.tempo && r.tempo < globalBestTime) globalBestTime = r.tempo; });
+    let players = {}; let globalBestTime = 999999;
+    leaderboardData.forEach(r => { if ((r.mode === 'story' || !r.mode) && r.tempo && r.tempo < globalBestTime) globalBestTime = r.tempo; });
     
     leaderboardData.forEach(run => {
         if (!players[run.nome]) players[run.nome] = { nome: run.nome, wins: 0, pp: 0, runs: [] };
         players[run.nome].runs.push(run);
         
-        players[run.nome].wins++;
-        
-        // Formula de PP: (Recorde Global / Seu Tempo) * 1000
-        if (run.tempo) {
-            let timePP = Math.floor((globalBestTime / run.tempo) * 1000);
-            players[run.nome].pp += timePP;
+        if (run.mode === 'story' || !run.mode) {
+            players[run.nome].wins++;
+            if (run.tempo) players[run.nome].pp += Math.floor((globalBestTime / run.tempo) * 1000);
+        } else if (run.mode === 'arcade') {
+            let basePP = Math.floor(run.tempo * 5) + ((run.metralhas || 0) * 15);
+            players[run.nome].pp += basePP;
         }
     });
     
     Object.values(players).forEach(p => {
-        p.pp += p.wins * 50; // +50 PP por vitória
+        p.pp += p.wins * 50; 
         p.runs.sort((a,b) => (a.tempo||99999) - (b.tempo||99999));
     });
-    
     return Object.values(players).sort((a, b) => b.pp - a.pp);
+}
+
+function calculateArcadePP(time, kills) {
+    return Math.floor(time * 5) + (kills * 15);
 }
 
 function getLeaderboardList() {
     if (leaderboardTab === 0) {
-        let sorted = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999));
-        let bestPerPlayer = {};
-        let uniqueList = [];
-        for (let run of sorted) { 
-            if (!bestPerPlayer[run.nome]) { 
-                bestPerPlayer[run.nome] = true; 
-                uniqueList.push(run); 
-            } 
-        }
+        let sorted = leaderboardData.filter(r => r.mode === 'story' || !r.mode).sort((a,b) => (a.tempo||99999) - (b.tempo||99999));
+        let bestPerPlayer = {}, uniqueList = [];
+        for (let run of sorted) { if (!bestPerPlayer[run.nome]) { bestPerPlayer[run.nome] = true; uniqueList.push(run); } }
         return uniqueList.slice(0, 10);
     } else if (leaderboardTab === 1) {
         return calculateAllPlayers().slice(0, 10);
@@ -374,76 +370,25 @@ function getLeaderboardList() {
 // ==========================================
 // ÁUDIO E VELOCIDADE
 // ==========================================
-function initAudioContext() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-}
-
+function initAudioContext() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
 function playExplosionSound() {
-    initAudioContext();
-    if (!audioCtx) return;
-
+    initAudioContext(); if (!audioCtx) return;
     const duration = 1.5, sampleRate = audioCtx.sampleRate, bufferSize = sampleRate * duration;
-    const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate);
-    const data = buffer.getChannelData(0);
-
+    const buffer = audioCtx.createBuffer(1, bufferSize, sampleRate); const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-
-    const noiseNode = audioCtx.createBufferSource();
-    noiseNode.buffer = buffer;
-
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1000, audioCtx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
-
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-
+    const noiseNode = audioCtx.createBufferSource(); noiseNode.buffer = buffer;
+    const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.setValueAtTime(1000, audioCtx.currentTime); filter.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
+    const gainNode = audioCtx.createGain(); gainNode.gain.setValueAtTime(1, audioCtx.currentTime); gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
     noiseNode.connect(filter); filter.connect(gainNode); gainNode.connect(audioCtx.destination);
-
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.5);
-    
-    const oscGain = audioCtx.createGain();
-    oscGain.gain.setValueAtTime(1, audioCtx.currentTime);
-    oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-
-    osc.connect(oscGain); oscGain.connect(audioCtx.destination);
-
-    noiseNode.start(); osc.start();
-    noiseNode.stop(audioCtx.currentTime + duration); osc.stop(audioCtx.currentTime + 0.5);
+    const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.5);
+    const oscGain = audioCtx.createGain(); oscGain.gain.setValueAtTime(1, audioCtx.currentTime); oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    osc.connect(oscGain); oscGain.connect(audioCtx.destination); noiseNode.start(); osc.start(); noiseNode.stop(audioCtx.currentTime + duration); osc.stop(audioCtx.currentTime + 0.5);
 }
-
-function updateAudioSpeed() {
-    if (isDying) return;
-    const safeSpeed = Math.min(gameSpeed, 16); 
-    if (bgm && !possessedMusicEnabled) { bgm.preservesPitch = true; bgm.playbackRate = safeSpeed; }
-    if (possessedSource && possessedMusicEnabled) { possessedSource.playbackRate.value = safeSpeed; }
-}
-
-function playAudio() {
-  if (bgm && bgm.paused && !possessedMusicEnabled) {
-    bgm.volume = 0.4;
-    bgm.play().catch(e => console.log("Audio blocked:", e));
-    updateAudioSpeed();
-  }
-}
-
-function triggerGlitchAudio() {
-  if (!bgm || possessedMusicEnabled) return;
-  try { bgm.playbackRate = 2.5; bgm.preservesPitch = false; } catch (e) { }
-}
-
-function resetAudio() {
-  if (!bgm) return;
-  isDying = false; deathAudioTimer = 0;
-  try { bgm.preservesPitch = true; updateAudioSpeed(); } catch (e) { }
-}
-
+function updateAudioSpeed() { if (isDying) return; const safeSpeed = Math.min(gameSpeed, 16); if (bgm && !possessedMusicEnabled) { bgm.preservesPitch = true; bgm.playbackRate = safeSpeed; } if (possessedSource && possessedMusicEnabled) possessedSource.playbackRate.value = safeSpeed; }
+function playAudio() { if (bgm && bgm.paused && !possessedMusicEnabled) { bgm.volume = 0.4; bgm.play().catch(e => console.log(e)); updateAudioSpeed(); } }
+function triggerGlitchAudio() { if (!bgm || possessedMusicEnabled) return; try { bgm.playbackRate = 2.5; bgm.preservesPitch = false; } catch (e) { } }
+function resetAudio() { if (!bgm) return; isDying = false; deathAudioTimer = 0; try { bgm.preservesPitch = true; updateAudioSpeed(); } catch (e) { } }
+function startDeathEffect() { isDying = true; deathAudioTimer = 0; if (bgm) bgm.preservesPitch = false; }
 function togglePossessedMusic(enabled) {
     if (!bgm) return;
     if (enabled) {
@@ -456,43 +401,34 @@ function togglePossessedMusic(enabled) {
                 reversedBuffer = rev; playReversed();
             }).catch(e => { bgm.preservesPitch = false; updateAudioSpeed(); bgm.play(); });
         } else playReversed();
-    } else {
-        if (possessedSource) { possessedSource.stop(); possessedSource = null; }
-        updateAudioSpeed(); bgm.play();
-    }
+    } else { if (possessedSource) { possessedSource.stop(); possessedSource = null; } updateAudioSpeed(); bgm.play(); }
 }
-
-function playReversed() {
-    if (possessedSource) possessedSource.stop();
-    possessedSource = audioCtx.createBufferSource(); possessedSource.buffer = reversedBuffer; possessedSource.loop = true;
-    updateAudioSpeed(); possessedSource.connect(audioCtx.destination); possessedSource.start();
-}
-
-function startDeathEffect() {
-    isDying = true; deathAudioTimer = 0;
-    if (bgm) bgm.preservesPitch = false;
-}
+function playReversed() { if (possessedSource) possessedSource.stop(); possessedSource = audioCtx.createBufferSource(); possessedSource.buffer = reversedBuffer; possessedSource.loop = true; updateAudioSpeed(); possessedSource.connect(audioCtx.destination); possessedSource.start(); }
 
 // ==========================================
-// JOGO
+// SETUP DO JOGO (HISTÓRIA & ARCADE)
 // ==========================================
 function setupLevel(level) {
   currentLevel = level;
   let bossHp = 1500 + (level * 800); 
-  
   player = { x: W/2, y: H - 100, r: 3, speed: 8, cooldown: 0, lives: 3 };
   boss = { x: W/2, y: 200, r: 80, hp: bossHp, maxHp: bossHp, timer: 0 };
-  bullets = []; playerBullets = []; lasers = []; bombEffects = []; 
-  
-  gameState = 'playing'; invulnerable = 0; screenShake = 0; bombs = 3; bombCooldown = 0; machineGunEvent = 0; machineGunTimer = 0; extraLives = [];
-  
+  bullets = []; playerBullets = []; lasers = []; bombEffects = []; extraLives = [];
+  gameState = 'playing'; invulnerable = 0; screenShake = 0; bombs = 3; bombCooldown = 0; machineGunEvent = 0; machineGunTimer = 0;
   targetX = player.x; targetY = player.y; resetAudio(); 
-  
   if (possessedMusicEnabled) togglePossessedMusic(true); else playAudio();
-  
-  if (level === 1) {
-      gameStartTime = performance.now(); machineGunCount = 0; 
-  }
+  if (level === 1) { gameStartTime = performance.now(); machineGunCount = 0; }
+}
+
+function setupArcade() {
+  player = { x: WORLD_W/2, y: WORLD_H/2, r: 4, speed: 8, cooldown: 0, lives: 5 };
+  arcadeEnemies = []; arcadePickups = []; arcadeBullets = []; playerBullets = []; bombEffects = [];
+  arcadeTime = 0; arcadeKills = 0;
+  gameState = 'arcade'; invulnerable = 0; screenShake = 0; bombs = 3; bombCooldown = 0;
+  cameraX = player.x - W/2; cameraY = player.y - H/2;
+  resetAudio(); 
+  if (possessedMusicEnabled) togglePossessedMusic(true); else playAudio();
+  gameStartTime = performance.now();
 }
 
 function initGame() { setupLevel(1); }
@@ -505,19 +441,17 @@ function changeGameSpeed(dir) { if (dir > 0) gameSpeed = Math.min(99.00, parseFl
 
 function handleAction(action) {
     if (gameState === 'menu') {
-        let totalItems = 4;
+        let totalItems = 5; 
         if (action === 'up') menuIndex = (menuIndex + totalItems - 1) % totalItems;
         if (action === 'down') menuIndex = (menuIndex + 1) % totalItems;
         if (action === 'confirm' || action === 'cancel') {
             if (menuIndex === 0) initGame();
-            else if (menuIndex === 1) gameState = 'options';
-            else if (menuIndex === 2) { gameState = 'leaderboard'; fetchLeaderboard(); }
-            else if (menuIndex === 3) {
-                if (currentUser) {
-                    currentUser = null; localStorage.removeItem('tintintleiro_user'); menuIndex = 0;
-                } else {
-                    gameState = 'login'; loginInput = ""; loginPass = ""; loginMode = "username"; loginError = "";
-                }
+            else if (menuIndex === 1) setupArcade();
+            else if (menuIndex === 2) gameState = 'options';
+            else if (menuIndex === 3) { gameState = 'leaderboard'; fetchLeaderboard(); }
+            else if (menuIndex === 4) {
+                if (currentUser) { currentUser = null; localStorage.removeItem('tintintleiro_user'); menuIndex = 0; }
+                else { gameState = 'login'; loginInput = ""; loginPass = ""; loginMode = "username"; loginError = ""; }
             }
         }
     } else if (gameState === 'login') {
@@ -544,33 +478,20 @@ function handleAction(action) {
         let list = getLeaderboardList();
         if (action === 'up') selectedRow = Math.max(0, selectedRow - 1);
         if (action === 'down') selectedRow = Math.min(list.length - 1, selectedRow + 1);
-        
-        if (action === 'confirm') { 
-            if (list[selectedRow]) {
-                if (leaderboardTab === 1) { // Aba de PP vai para o perfil
-                    profilePlayer = list[selectedRow].nome;
-                    gameState = 'profile';
-                }
-            }
-        }
+        if (action === 'confirm' && list[selectedRow] && leaderboardTab === 1) { profilePlayer = list[selectedRow].nome; gameState = 'profile'; }
         if (action === 'cancel') gameState = 'menu';
     } else if (gameState === 'profile') {
         if (action === 'cancel' || action === 'confirm') gameState = 'leaderboard';
     } else if (gameState === 'levelCleared') {
         if (action === 'confirm' || action === 'cancel') { if (currentLevel < 6) setupLevel(currentLevel + 1); }
-    } else if (gameState === 'gameOver') {
-        if (action === 'confirm' || action === 'cancel') { window.location.reload(); }
+    } else if (gameState === 'gameOver' || gameState === 'arcadeOver') {
+        if (action === 'confirm' || action === 'cancel') { if (pendingScore && !currentUser) { gameState = 'login'; loginInput = ""; loginPass = ""; loginMode = "username"; loginError = ""; } else { window.location.reload(); } }
     } else if (gameState === 'gameWin') {
-        if (action === 'confirm' || action === 'cancel') { 
-            if (pendingScore && !currentUser) {
-                gameState = 'login'; loginInput = ""; loginPass = ""; loginMode = "username"; loginError = "";
-            } else {
-                window.location.reload(); 
-            }
-        }
-    } else if (gameState === 'playing') {
+        if (action === 'confirm' || action === 'cancel') { if (pendingScore && !currentUser) { gameState = 'login'; loginInput = ""; loginPass = ""; loginMode = "username"; loginError = ""; } else { window.location.reload(); } }
+    } else if (gameState === 'playing' || gameState === 'arcade') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
-            bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
+            bombs--; bullets = []; arcadeBullets = []; lasers = []; screenShake = 30; bombCooldown = 30;
+            if (gameState === 'playing') boss.hp -= 300;
             playExplosionSound(); screenFlash = 1.0; 
             let bombLetters = [];
             for (let i = 0; i < 30; i++) bombLetters.push({ char: chineseChars[Math.floor(Math.random() * chineseChars.length)], angle: Math.random() * Math.PI * 2, dist: Math.random() * 100, speed: 10 + Math.random() * 20, size: 20 + Math.random() * 40 });
@@ -609,10 +530,8 @@ window.addEventListener('keydown', e => {
   if (k === 'arrowdown' || k === 's') handleAction('down');
   if (k === 'arrowleft' || k === 'a') handleAction('left');
   if (k === 'arrowright' || k === 'd') handleAction('right');
-  
-  // Mapeamento Correto:
-  if (k === 'enter' || k === ' ') handleAction('confirm'); // Confirmar / Ver Perfil
-  if (k === 'z' || k === 'escape') handleAction('cancel');  // Voltar / Sair
+  if (k === 'enter' || k === ' ') handleAction('confirm');
+  if (k === 'z' || k === 'escape') handleAction('cancel');
   if (k === 'x') handleAction('bomb');
 });
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -634,10 +553,11 @@ canvas.addEventListener('pointerdown', e => {
 
     if (isMobile) {
         if (gameState === 'menu') {
-            if (pos.y > H/2 - 70 && pos.y < H/2 - 10) { menuIndex = 0; handleAction('confirm'); }
-            else if (pos.y > H/2 && pos.y < H/2 + 60) { menuIndex = 1; handleAction('confirm'); }
-            else if (pos.y > H/2 + 70 && pos.y < H/2 + 130) { menuIndex = 2; handleAction('confirm'); }
+            if (pos.y > H/2 - 130 && pos.y < H/2 - 70) { menuIndex = 0; handleAction('confirm'); }
+            else if (pos.y > H/2 - 40 && pos.y < H/2 + 20) { menuIndex = 1; handleAction('confirm'); }
+            else if (pos.y > H/2 + 50 && pos.y < H/2 + 110) { menuIndex = 2; handleAction('confirm'); }
             else if (pos.y > H/2 + 140 && pos.y < H/2 + 200) { menuIndex = 3; handleAction('confirm'); }
+            else if (pos.y > H/2 + 230 && pos.y < H/2 + 290) { menuIndex = 4; handleAction('confirm'); }
         } else if (gameState === 'login') {
             if (pos.y > H/2 - 40 && pos.y < H/2 + 10) { loginMode = 'username'; }
             else if (pos.y > H/2 + 30 && pos.y < H/2 + 80) { loginMode = 'password'; }
@@ -651,19 +571,10 @@ canvas.addEventListener('pointerdown', e => {
                 else if (pos.x < 2*W/3) { leaderboardTab = 1; selectedRow = 0; }
                 else { leaderboardTab = 2; selectedRow = 0; }
             } else if (pos.y > H - 80 && pos.y < H - 20) { handleAction('cancel'); }
-            else { 
-                let list = getLeaderboardList(); 
-                for (let i = 0; i < list.length; i++) {
-                    if (pos.y > 260 + i*35 - 20 && pos.y < 260 + i*35 + 15) { 
-                        selectedRow = i; 
-                        if (leaderboardTab === 1) { profilePlayer = list[i].nome; gameState = 'profile'; }
-                        return; 
-                    } 
-                } 
-            }
-        } else if (gameState === 'profile' || gameState === 'replay') handleAction('cancel');
-        else if (gameState === 'levelCleared' || gameState === 'gameOver' || gameState === 'gameWin') handleAction('confirm');
-        else if (gameState === 'playing') { if (pos.x > W - 120 && pos.y > H - 120) handleAction('bomb'); }
+            else { let list = getLeaderboardList(); for (let i = 0; i < list.length; i++) if (pos.y > 260 + i*35 - 20 && pos.y < 260 + i*35 + 15) { selectedRow = i; if (leaderboardTab === 1) { profilePlayer = list[i].nome; gameState = 'profile'; } return; } }
+        } else if (gameState === 'profile') handleAction('cancel');
+        else if (gameState === 'levelCleared' || gameState === 'gameOver' || gameState === 'gameWin' || gameState === 'arcadeOver') handleAction('confirm');
+        else if (gameState === 'playing' || gameState === 'arcade') { if (pos.x > W - 120 && pos.y > H - 120) handleAction('bomb'); }
     }
 });
 canvas.addEventListener('pointermove', e => { const pos = getPointerPos(e); targetX = pos.x; targetY = pos.y; });
@@ -680,119 +591,164 @@ function update() {
       if (deathAudioTimer > 150) { if (bgm) bgm.pause(); if (possessedSource) possessedSource.stop(); isDying = false; }
       return;
   }
-
-  if (gameState !== 'playing') screenShake = 0; 
-  if (gameState !== 'playing' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin') return;
-
-  if (machineGunEvent === 1) {
-    machineGunTimer--; screenShake = 50;
-    if (machineGunTimer <= 0) { machineGunEvent = 2; machineGunTimer = 240; }
-    return; 
-  }
   
-  if (gameState !== 'playing') return;
+  if (gameState !== 'playing' && gameState !== 'arcade') screenShake = 0; 
+  if (gameState !== 'playing' && gameState !== 'arcade' && gameState !== 'levelCleared' && gameState !== 'gameOver' && gameState !== 'gameWin' && gameState !== 'arcadeOver') return;
+
   if (bombCooldown > 0) bombCooldown--;
   if (screenShake > 0) screenShake--; 
   if (screenFlash > 0) screenFlash -= 0.05; 
 
-  for (let i = bombEffects.length - 1; i >= 0; i--) {
-      let be = bombEffects[i];
-      be.radius += 40; be.alpha -= 0.02; 
-      for (let l of be.letters) { l.dist += l.speed; l.size += 1; }
-      if (be.alpha <= 0) bombEffects.splice(i, 1);
+  for (let i = bombEffects.length - 1; i >= 0; i--) { let be = bombEffects[i]; be.radius += 40; be.alpha -= 0.02; for (let l of be.letters) { l.dist += l.speed; l.size += 1; } if (be.alpha <= 0) bombEffects.splice(i, 1); }
+  if (invulnerable > 0) invulnerable--;
+
+  // ==========================================
+  // LÓGICA DO MODO HISTÓRIA (INTOCÁVEL)
+  // ==========================================
+  if (gameState === 'playing') {
+      if (machineGunEvent === 1) { machineGunTimer--; screenShake = 50; if (machineGunTimer <= 0) { machineGunEvent = 2; machineGunTimer = 240; } return; }
+      currentRunTime = (performance.now() - gameStartTime) / 1000;
+      
+      if (isMobile || mouseControlEnabled) { player.x += (targetX - player.x) * 0.4; player.y += (targetY - player.y) * 0.4; } 
+      else { if (keys['arrowleft'] || keys['a']) player.x -= player.speed; if (keys['arrowright'] || keys['d']) player.x += player.speed; if (keys['arrowup'] || keys['w']) player.y -= player.speed; if (keys['arrowdown'] || keys['s']) player.y += player.speed; }
+      player.x = Math.max(20, Math.min(W - 20, player.x)); player.y = Math.max(20, Math.min(H - 20, player.y));
+      if (player.cooldown > 0) player.cooldown--;
+      if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) { playerBullets.push({ x: player.x, y: player.y - 20, vx: 0, vy: -18, r: 6, damage: 25 }); player.cooldown = 4; }
+
+      let speedMult = 1 + (currentLevel * 0.15);
+      boss.x = W/2 + Math.sin(boss.timer / (80 / speedMult)) * 200; boss.y = 200 + Math.cos(boss.timer / (100 / speedMult)) * 50; boss.timer++;
+      let fireRate = Math.max(8, 25 - (currentLevel * 2)), bulletSpeed = 3.5 + (currentLevel * 0.4), laserRate = Math.max(80, 220 - (currentLevel * 25));
+      
+      if (machineGunEvent === 0 && boss.timer % Math.floor(fireRate) === 0) {
+        const angle = Math.atan2(player.y - boss.y, player.x - boss.x); let spread = Math.min(4, 1 + Math.floor(currentLevel / 2)); 
+        for(let i = -spread; i <= spread; i++) bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(angle + i * 0.2) * bulletSpeed, vy: Math.sin(angle + i * 0.2) * bulletSpeed, r: 10, color: ['#0f0', '#f00', '#ff0', '#00f', '#ffa500'][Math.floor(Math.random() * 5)] });
+      }
+      if (machineGunEvent === 0 && boss.timer % Math.floor(laserRate) === 0) {
+        const angle = Math.atan2(player.y - boss.y, player.x - boss.x); lasers.push({ angle: angle, life: 70, warning: 40 });
+        if (currentLevel === 6) lasers.push({ angle: angle + Math.PI/4, life: 70, warning: 40 });
+      }
+      if (machineGunEvent === 0 && Math.random() < 0.0005) { machineGunEvent = 1; machineGunTimer = 120; bullets = []; lasers = []; machineGunCount++; }
+      if (machineGunEvent === 2) {
+        machineGunTimer--; if (machineGunTimer % 2 === 0) for (let i = 0; i < 8; i++) bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(Math.random()*Math.PI*2) * 8, vy: Math.sin(Math.random()*Math.PI*2) * 8, r: 8, color: '#f00' });
+        if (Math.random() < 0.8 && extraLives.length < 100) extraLives.push({ x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30, r: 20, floatOffset: Math.random() * Math.PI * 2 });
+        for (let i = extraLives.length - 1; i >= 0; i--) { let el = extraLives[i]; el.floatOffset += 0.1; let dx = el.x - player.x, dy = el.y - player.y; if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) { player.lives += 5; extraLives.splice(i, 1); } }
+        if (machineGunTimer <= 0) { machineGunEvent = 0; extraLives = []; }
+      }
+
+      for (let i = playerBullets.length - 1; i >= 0; i--) {
+        let pb = playerBullets[i]; pb.x += (pb.vx || 0); pb.y += pb.vy;
+        let dx = pb.x - boss.x, dy = pb.y - boss.y;
+        if (dx*dx + dy*dy < (boss.r + pb.r)*(boss.r + pb.r)) {
+          boss.hp -= pb.damage; playerBullets.splice(i, 1);
+          if (boss.hp <= 0) { 
+            boss.hp = 0; 
+            if (currentLevel === 6) { 
+                finalRunTime = currentRunTime;
+                if (currentUser) { saveScore(currentUser, finalRunTime, gameSpeed, machineGunCount, "story"); gameState = 'gameWin'; } 
+                else { pendingScore = { tempo: finalRunTime, speed: gameSpeed, mguns: machineGunCount, mode: "story" }; gameState = 'gameWin'; }
+            } else { gameState = 'levelCleared'; }
+            triggerGlitchAudio(); 
+          }
+        } else if (pb.y < 0) playerBullets.splice(i, 1);
+      }
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i]; b.x += b.vx; b.y += b.vy; let dx = b.x - player.x, dy = b.y - player.y;
+        if (invulnerable <= 0 && dx*dx + dy*dy < (b.r + player.r)*(b.r + player.r)) { player.lives--; invulnerable = 120; bullets = []; screenShake = 20; if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); } break; }
+        if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
+      }
+      for (let i = lasers.length - 1; i >= 0; i--) {
+        let l = lasers[i]; l.life--; l.warning--;
+        if (l.warning <= 0 && invulnerable <= 0) { let dist = Math.abs((player.x - boss.x) * Math.sin(l.angle) - (player.y - boss.y) * Math.cos(l.angle)); if (dist < 25) { player.lives--; invulnerable = 120; bullets = []; screenShake = 20; if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); } } }
+        if (l.life <= 0) lasers.splice(i, 1);
+      }
   }
 
-  currentRunTime = (performance.now() - gameStartTime) / 1000;
+  // ==========================================
+  // LÓGICA DO MODO ARCADE (CAOS)
+  // ==========================================
+  if (gameState === 'arcade') {
+      arcadeTime += (1/60) * gameSpeed;
+      currentRunTime = arcadeTime;
 
-  if (isMobile || mouseControlEnabled) {
-      player.x += (targetX - player.x) * 0.4;
-      player.y += (targetY - player.y) * 0.4;
-  } else {
       if (keys['arrowleft'] || keys['a']) player.x -= player.speed;
       if (keys['arrowright'] || keys['d']) player.x += player.speed;
       if (keys['arrowup'] || keys['w']) player.y -= player.speed;
       if (keys['arrowdown'] || keys['s']) player.y += player.speed;
-  }
-  
-  player.x = Math.max(20, Math.min(W - 20, player.x)); player.y = Math.max(20, Math.min(H - 20, player.y));
-  if (player.cooldown > 0) player.cooldown--;
+      player.x = Math.max(20, Math.min(WORLD_W - 20, player.x)); player.y = Math.max(20, Math.min(WORLD_H - 20, player.y));
 
-  if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) {
-    playerBullets.push({ x: player.x, y: player.y - 20, r: 6, vy: -18, damage: 25 }); player.cooldown = 4;
-  }
+      cameraX = Math.max(0, Math.min(WORLD_W - W, player.x - W/2));
+      cameraY = Math.max(0, Math.min(WORLD_H - H, player.y - H/2));
 
-  let speedMult = 1 + (currentLevel * 0.15);
-  boss.x = W/2 + Math.sin(boss.timer / (80 / speedMult)) * 200; boss.y = 200 + Math.cos(boss.timer / (100 / speedMult)) * 50; boss.timer++;
-
-  let fireRate = Math.max(8, 25 - (currentLevel * 2)); 
-  let bulletSpeed = 3.5 + (currentLevel * 0.4);
-  let laserRate = Math.max(80, 220 - (currentLevel * 25));
-
-  if (machineGunEvent === 0 && boss.timer % Math.floor(fireRate) === 0) {
-    const angle = Math.atan2(player.y - boss.y, player.x - boss.x); let spread = Math.min(4, 1 + Math.floor(currentLevel / 2)); 
-    for(let i = -spread; i <= spread; i++) bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(angle + i * 0.2) * bulletSpeed, vy: Math.sin(angle + i * 0.2) * bulletSpeed, r: 10, color: ['#0f0', '#f00', '#ff0', '#00f', '#ffa500'][Math.floor(Math.random() * 5)] });
-  }
-
-  if (machineGunEvent === 0 && boss.timer % Math.floor(laserRate) === 0) {
-    const angle = Math.atan2(player.y - boss.y, player.x - boss.x); lasers.push({ angle: angle, life: 70, warning: 40 });
-    if (currentLevel === 6) lasers.push({ angle: angle + Math.PI/4, life: 70, warning: 40 });
-  }
-
-  if (machineGunEvent === 0 && Math.random() < 0.0005) { machineGunEvent = 1; machineGunTimer = 120; bullets = []; lasers = []; machineGunCount++; }
-
-  if (machineGunEvent === 2) {
-    machineGunTimer--; if (machineGunTimer % 2 === 0) for (let i = 0; i < 8; i++) bullets.push({ x: boss.x, y: boss.y, vx: Math.cos(Math.random()*Math.PI*2) * 8, vy: Math.sin(Math.random()*Math.PI*2) * 8, r: 8, color: '#f00' });
-    if (Math.random() < 0.8 && extraLives.length < 100) extraLives.push({ x: Math.random() * (W - 60) + 30, y: Math.random() * (H - 60) + 30, r: 20, floatOffset: Math.random() * Math.PI * 2 });
-    for (let i = extraLives.length - 1; i >= 0; i--) { let el = extraLives[i]; el.floatOffset += 0.1; let dx = el.x - player.x, dy = el.y - player.y; if (dx*dx + dy*dy < (el.r + player.r)*(el.r + player.r)) { player.lives += 5; extraLives.splice(i, 1); } }
-    if (machineGunTimer <= 0) { machineGunEvent = 0; extraLives = []; }
-  }
-
-  if (invulnerable > 0) invulnerable--;
-
-  for (let i = playerBullets.length - 1; i >= 0; i--) {
-    let pb = playerBullets[i]; pb.y += pb.vy;
-    let dx = pb.x - boss.x, dy = pb.y - boss.y;
-    if (dx*dx + dy*dy < (boss.r + pb.r)*(boss.r + pb.r)) {
-      boss.hp -= pb.damage; playerBullets.splice(i, 1);
-      if (boss.hp <= 0) { 
-        boss.hp = 0; 
-        if (currentLevel === 6) { 
-            finalRunTime = currentRunTime;
-            
-            if (currentUser) {
-                saveScore(currentUser, finalRunTime, gameSpeed, machineGunCount);
-                gameState = 'gameWin';
-            } else {
-                pendingScore = { tempo: finalRunTime, speed: gameSpeed, mguns: machineGunCount };
-                gameState = 'gameWin';
-            }
-        } else { gameState = 'levelCleared'; }
-        triggerGlitchAudio(); 
+      if (player.cooldown > 0) player.cooldown--;
+      if ((keys['z'] || keys[' '] || autoFireEnabled || isMobile) && player.cooldown <= 0) {
+          let closest = null, minDist = Infinity;
+          arcadeEnemies.forEach(e => { let d = (e.x - player.x)**2 + (e.y - player.y)**2; if (d < minDist) { minDist = d; closest = e; } });
+          let angle = closest ? Math.atan2(closest.y - player.y, closest.x - player.x) : -Math.PI/2;
+          playerBullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*18, vy: Math.sin(angle)*18, r: 6, damage: 25 });
+          player.cooldown = 5;
       }
-    } else if (pb.y < 0) playerBullets.splice(i, 1);
-  }
 
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    let b = bullets[i]; b.x += b.vx; b.y += b.vy;
-    let dx = b.x - player.x, dy = b.y - player.y;
-    if (invulnerable <= 0 && dx*dx + dy*dy < (b.r + player.r)*(b.r + player.r)) {
-      player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-      if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); }
-      break;
-    }
-    if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
-  }
-
-  for (let i = lasers.length - 1; i >= 0; i--) {
-    let l = lasers[i]; l.life--; l.warning--;
-    if (l.warning <= 0 && invulnerable <= 0) {
-      let dist = Math.abs((player.x - boss.x) * Math.sin(l.angle) - (player.y - boss.y) * Math.cos(l.angle));
-      if (dist < 25) {
-        player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-        if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); }
+      if (arcadeEnemies.length < 30 && Math.random() < 0.03 * gameSpeed) {
+          let ex, ey, side = Math.floor(Math.random() * 4);
+          if (side === 0) { ex = cameraX - 50; ey = cameraY + Math.random() * H; }
+          else if (side === 1) { ex = cameraX + W + 50; ey = cameraY + Math.random() * H; }
+          else if (side === 2) { ex = cameraX + Math.random() * W; ey = cameraY - 50; }
+          else { ex = cameraX + Math.random() * W; ey = cameraY + H + 50; }
+          arcadeEnemies.push({ x: ex, y: ey, hp: 30 + (arcadeTime * 2), maxHp: 30 + (arcadeTime * 2), size: 30 + Math.random() * 20, rot: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 0.1, scale: 1, scaleSpeed: (Math.random() - 0.5) * 0.02, type: Math.floor(Math.random() * 3), color: ['#f00', '#0f0', '#00f', '#ff0', '#f0f'][Math.floor(Math.random() * 5)] });
       }
-    }
-    if (l.life <= 0) lasers.splice(i, 1);
+
+      if (arcadePickups.length < 10 && Math.random() < 0.01 * gameSpeed) {
+          arcadePickups.push({ x: cameraX + Math.random() * W, y: cameraY + Math.random() * H, r: 15, type: Math.random() > 0.7 ? 'bomb' : 'life', floatOffset: Math.random() * Math.PI * 2 });
+      }
+
+      for (let i = arcadeEnemies.length - 1; i >= 0; i--) {
+          let e = arcadeEnemies[i], angle = Math.atan2(player.y - e.y, player.x - e.x), speed = 1.5 + (arcadeTime * 0.05);
+          if (e.type === 0) { e.x += Math.cos(angle) * speed; e.y += Math.sin(angle) * speed; }
+          else if (e.type === 1) { e.x += Math.cos(angle) * speed * 0.5; e.y += Math.sin(angle) * speed * 0.5; e.rot += 0.1; }
+          else { e.x += Math.cos(angle) * speed * 0.2; e.y += Math.sin(angle) * speed * 0.2; if (Math.random() < 0.02) arcadeBullets.push({ x: e.x, y: e.y, vx: Math.cos(angle)*6, vy: Math.sin(angle)*6, r: 8, color: '#f00' }); }
+          e.scale += e.scaleSpeed; if (e.scale > 1.3 || e.scale < 0.7) e.scaleSpeed *= -1;
+
+          if (invulnerable <= 0 && Math.hypot(e.x - player.x, e.y - player.y) < (e.size * e.scale/2 + player.r)) {
+              player.lives--; invulnerable = 120; screenShake = 20;
+              if (player.lives <= 0) { 
+                  gameState = 'arcadeOver'; finalRunTime = arcadeTime; 
+                  let pp = calculateArcadePP(arcadeTime, arcadeKills);
+                  pendingScore = { tempo: arcadeTime, speed: gameSpeed, mguns: arcadeKills, mode: "arcade", pp: pp };
+                  startDeathEffect();
+                  if (currentUser) saveScore(currentUser, arcadeTime, gameSpeed, arcadeKills, "arcade");
+              }
+          }
+      }
+
+      for (let i = arcadePickups.length - 1; i >= 0; i--) {
+          let p = arcadePickups[i]; p.floatOffset += 0.1;
+          if (Math.hypot(p.x - player.x, p.y - player.y) < p.r + player.r) { if (p.type === 'bomb') bombs++; else player.lives++; arcadePickups.splice(i, 1); }
+      }
+
+      for (let i = playerBullets.length - 1; i >= 0; i--) {
+          let pb = playerBullets[i]; pb.x += pb.vx; pb.y += pb.vy; let hit = false;
+          for (let j = arcadeEnemies.length - 1; j >= 0; j--) {
+              let e = arcadeEnemies[j];
+              if (Math.hypot(pb.x - e.x, pb.y - e.y) < (e.size * e.scale/2 + pb.r)) { e.hp -= pb.damage; hit = true; if (e.hp <= 0) { arcadeEnemies.splice(j, 1); arcadeKills++; screenShake = 10; } break; }
+          }
+          if (hit || pb.x < 0 || pb.x > WORLD_W || pb.y < 0 || pb.y > WORLD_H) playerBullets.splice(i, 1);
+      }
+
+      for (let i = arcadeBullets.length - 1; i >= 0; i--) {
+          let b = arcadeBullets[i]; b.x += b.vx; b.y += b.vy;
+          if (invulnerable <= 0 && Math.hypot(b.x - player.x, b.y - player.y) < b.r + player.r) {
+              player.lives--; invulnerable = 120; screenShake = 20;
+              if (player.lives <= 0) { 
+                  gameState = 'arcadeOver'; finalRunTime = arcadeTime; 
+                  let pp = calculateArcadePP(arcadeTime, arcadeKills);
+                  pendingScore = { tempo: arcadeTime, speed: gameSpeed, mguns: arcadeKills, mode: "arcade", pp: pp };
+                  startDeathEffect();
+                  if (currentUser) saveScore(currentUser, arcadeTime, gameSpeed, arcadeKills, "arcade");
+              }
+              break;
+          }
+          if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H) arcadeBullets.splice(i, 1);
+      }
   }
 }
 
@@ -801,7 +757,7 @@ function update() {
 // ==========================================
 function draw() {
   ctx.save();
-  if (screenShake > 0 && gameState === 'playing') {
+  if (screenShake > 0 && (gameState === 'playing' || gameState === 'arcade')) {
       ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
   }
 
@@ -815,12 +771,10 @@ function draw() {
 
   if (gameState === 'playing' || gameState === 'levelCleared') {
       for (let be of bombEffects) {
-          ctx.save(); ctx.globalAlpha = be.alpha;
-          let gradient = ctx.createRadialGradient(be.x, be.y, be.radius * 0.1, be.x, be.y, be.radius);
+          ctx.save(); ctx.globalAlpha = be.alpha; let gradient = ctx.createRadialGradient(be.x, be.y, be.radius * 0.1, be.x, be.y, be.radius);
           gradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)'); gradient.addColorStop(0.5, 'rgba(255, 0, 0, 0.4)'); gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
           ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(be.x, be.y, be.radius, 0, Math.PI*2); ctx.fill();
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          for (let l of be.letters) { let lx = be.x + Math.cos(l.angle) * l.dist, ly = be.y + Math.sin(l.angle) * l.dist; ctx.fillStyle = '#ff0000'; ctx.font = `bold ${l.size}px "Noto Sans CJK SC", sans-serif`; ctx.fillText(l.char, lx, ly); }
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; for (let l of be.letters) { let lx = be.x + Math.cos(l.angle) * l.dist, ly = be.y + Math.sin(l.angle) * l.dist; ctx.fillStyle = '#ff0000'; ctx.font = `bold ${l.size}px "Noto Sans CJK SC", sans-serif`; ctx.fillText(l.char, lx, ly); }
           ctx.restore();
       }
   }
@@ -829,17 +783,17 @@ function draw() {
   ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(W - 140, 10, 130, 40); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(W - 140, 10, 130, 40); ctx.fillStyle = '#fff'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center'; ctx.fillText(lang === 'en' ? "EN 🇺🇸" : lang === 'pt' ? "PT 🇧🇷" : "CN 🇨🇳", W - 75, 35); ctx.restore();
 
   if (gameState === 'menu') {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText("TINTINTLEIRO", W/2, H/2 - 180);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText("TINTINTLEIRO", W/2, H/2 - 200);
     ctx.font = 'bold 35px monospace';
-    ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 0 ? "> " + t('start') + " <" : t('start'), W/2, H/2 - 40);
-    ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 1 ? "> " + t('options') + " <" : t('options'), W/2, H/2 + 30);
-    ctx.fillStyle = menuIndex === 2 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 2 ? "> " + t('leaderboard') + " <" : t('leaderboard'), W/2, H/2 + 100);
-    
+    ctx.fillStyle = menuIndex === 0 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 0 ? "> " + t('start') + " <" : t('start'), W/2, H/2 - 90);
+    ctx.fillStyle = menuIndex === 1 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 1 ? "> " + t('arcade') + " <" : t('arcade'), W/2, H/2 - 20);
+    ctx.fillStyle = menuIndex === 2 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 2 ? "> " + t('options') + " <" : t('options'), W/2, H/2 + 50);
+    ctx.fillStyle = menuIndex === 3 ? '#0f0' : '#fff'; ctx.fillText(menuIndex === 3 ? "> " + t('leaderboard') + " <" : t('leaderboard'), W/2, H/2 + 120);
     if (currentUser) {
         ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('loggedAs')} ${currentUser}`, W/2, H/2 + 210);
-        ctx.fillStyle = menuIndex === 3 ? '#0f0' : '#f00'; ctx.font = 'bold 35px monospace'; ctx.fillText(menuIndex === 3 ? "> " + t('logout') + " <" : t('logout'), W/2, H/2 + 260);
+        ctx.fillStyle = menuIndex === 4 ? '#0f0' : '#f00'; ctx.font = 'bold 35px monospace'; ctx.fillText(menuIndex === 4 ? "> " + t('logout') + " <" : t('logout'), W/2, H/2 + 260);
     } else {
-        ctx.fillStyle = menuIndex === 3 ? '#0f0' : '#ff0'; ctx.font = 'bold 35px monospace'; ctx.fillText(menuIndex === 3 ? "> " + t('login') + " <" : t('login'), W/2, H/2 + 230);
+        ctx.fillStyle = menuIndex === 4 ? '#0f0' : '#ff0'; ctx.font = 'bold 35px monospace'; ctx.fillText(menuIndex === 4 ? "> " + t('login') + " <" : t('login'), W/2, H/2 + 230);
     }
     ctx.fillStyle = '#888'; ctx.font = 'bold 16px monospace'; ctx.fillText(t('madeBy'), W/2, H - 80);
   } 
@@ -863,7 +817,6 @@ function draw() {
     ctx.font = 'bold 20px monospace'; ctx.fillStyle = leaderboardTab === 0 ? '#0f0' : '#666'; ctx.fillText("[ " + t('tabFast') + " ]", W/2 - 230, 120); ctx.fillStyle = leaderboardTab === 1 ? '#0f0' : '#666'; ctx.fillText("[ " + t('tabPP') + " ]", W/2, 120); ctx.fillStyle = leaderboardTab === 2 ? '#0f0' : '#666'; ctx.fillText("[ " + t('tabRecent') + " ]", W/2 + 230, 120);
     ctx.fillStyle = '#555'; ctx.font = '16px monospace'; ctx.fillText("< >", W/2, 150);
     let list = getLeaderboardList(); ctx.font = '16px monospace';
-    
     if (JSONBIN_BIN_ID.includes("COLE_AQUI")) { ctx.fillStyle = '#ff0'; ctx.fillText(t('configApi'), W/2, 300); }
     else if (list.length === 0) { ctx.fillStyle = '#fff'; ctx.fillText(t('noRecords'), W/2, 300); }
     else {
@@ -902,9 +855,7 @@ function draw() {
   }
   else if (gameState === 'profile') {
     ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 40px Impact, sans-serif'; ctx.fillText(t('profileTitle'), W/2, 60);
-    let allPlayers = calculateAllPlayers(); 
-    let p = allPlayers.find(pl => pl.nome === profilePlayer);
-    let rank = allPlayers.findIndex(pl => pl.nome === profilePlayer) + 1;
+    let allPlayers = calculateAllPlayers(); let p = allPlayers.find(pl => pl.nome === profilePlayer); let rank = allPlayers.findIndex(pl => pl.nome === profilePlayer) + 1;
     if (p) {
         ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText(p.nome, W/2, 110);
         ctx.fillStyle = '#f0f'; ctx.font = 'bold 50px Impact, sans-serif'; ctx.fillText(`${t('rank')} #${rank}`, W/2, 170);
@@ -920,7 +871,7 @@ function draw() {
     ctx.fillStyle = '#0f0'; ctx.font = 'bold 24px monospace'; ctx.fillText("[ Z ] BACK", W/2, H - 40);
   }
   else {
-    if (gameState !== 'gameOver' && gameState !== 'gameWin') {
+    if (gameState !== 'gameOver' && gameState !== 'gameWin' && gameState !== 'arcadeOver') {
       if (gameState === 'playing') {
           ctx.save(); ctx.translate(boss.x, boss.y); if (bossImg.complete && bossImg.naturalWidth !== 0) ctx.drawImage(bossImg, -boss.r, -boss.r, boss.r * 2, boss.r * 2); else { ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 0, boss.r, 0, Math.PI*2); ctx.fill(); }
           ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(-30, -20, 10, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(30, -20, 10, 0, Math.PI*2); ctx.fill(); ctx.restore();
@@ -940,10 +891,50 @@ function draw() {
           ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('bombs')} ${bombs} [X]`, 100, 150);
           if (gameSpeed !== 1.0) { ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace'; ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160); }
       }
+
+      if (gameState === 'arcade') {
+          ctx.save();
+          ctx.translate(-cameraX, -cameraY);
+          
+          ctx.strokeStyle = '#f00'; ctx.lineWidth = 10;
+          ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
+
+          for (let p of arcadePickups) { ctx.fillStyle = p.type === 'bomb' ? '#f0f' : '#0f0'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.type === 'bomb' ? "💣" : "❤", p.x, p.y + Math.sin(p.floatOffset) * 5); }
+          
+          for (let e of arcadeEnemies) {
+              ctx.save();
+              ctx.translate(e.x, e.y);
+              ctx.rotate(e.rot);
+              ctx.scale(e.scale, e.scale);
+              if (bossImg.complete && bossImg.naturalWidth !== 0) {
+                  ctx.drawImage(bossImg, -e.size/2, -e.size/2, e.size, e.size);
+              } else {
+                  ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(0, 0, e.size/2, 0, Math.PI*2); ctx.fill();
+              }
+              if (e.type === 1) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, e.size/2 + 5, 0, Math.PI*2); ctx.stroke(); }
+              ctx.restore();
+          }
+
+          for (let b of arcadeBullets) { ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+
+          ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(-Math.PI / 8); if (invulnerable > 0 && Math.floor((performance.now()/100) % 2) === 0) ctx.globalAlpha = 0.3; ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.ellipse(0, 12, 12, 16, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#D2B48C'; ctx.fillRect(-4, -30, 8, 35); ctx.fillStyle = '#8B4513'; ctx.fillRect(-6, -36, 12, 8); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, -35); ctx.lineTo(-2, 20); ctx.stroke(); ctx.beginPath(); ctx.moveTo(2, -35); ctx.lineTo(2, 20); ctx.stroke(); ctx.fillStyle = '#f00'; ctx.beginPath(); ctx.arc(0, 12, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
+          
+          for (let pb of playerBullets) { ctx.save(); ctx.shadowBlur = 15; ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#ff2222'; ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); }
+
+          ctx.restore();
+
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Impact, sans-serif'; ctx.textAlign = 'left';
+          ctx.fillText(`TIME: ${arcadeTime.toFixed(2)}s`, 30, 50);
+          ctx.fillText(`KILLS: ${arcadeKills}`, 30, 90);
+          ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00'; if (player.lives > 10) ctx.fillText(`${t('lives')} ❤ x ${player.lives}`, 30, 130); else ctx.fillText(t('lives') + " " + "❤".repeat(player.lives), 30, 130);
+          ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('bombs')} ${bombs} [X]`, 30, 160);
+
+          if (isMobile) { ctx.fillStyle = 'rgba(255,0,0,0.4)'; ctx.beginPath(); ctx.arc(W - 80, H - 80, 50, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("💣", W - 80, H - 80); }
+      }
     }
     if (machineGunEvent === 1 && gameState === 'playing') { ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, W, H); ctx.save(); ctx.translate(Math.random()*30-15, Math.random()*30-15); ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText("CRAZY CHINESE", W/2, H/2 - 40); ctx.fillText("MACHINEGUN!!!11!!!!", W/2, H/2 + 40); for(let i=0; i<15; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#ff0' : '#fff'; ctx.font = `bold ${20 + Math.random()*50}px sans-serif`; ctx.fillText("DUDUDUDUDU", Math.random()*W, Math.random()*H); } ctx.restore(); }
     
-    if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') { 
+    if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver' || gameState === 'arcadeOver') { 
         ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; 
         if (gameState === 'levelCleared') { 
             ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText(t('youWin'), W/2, H/2 - 100); 
@@ -952,7 +943,21 @@ function draw() {
         } else if (gameState === 'gameWin') { 
             ctx.fillStyle = '#0f0'; ctx.font = 'bold 70px Impact, sans-serif'; ctx.fillText(t('survived'), W/2, H/2 - 100); 
             for(let i=0; i<25; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff'; ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`; ctx.fillText(glitchText[Math.floor(Math.random() * glitchText.length)], Math.random()*W, Math.random()*H); } 
-            
+            if (currentUser) {
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('return'), W/2, H - 100); 
+                if (isSavingScore) { ctx.fillStyle = '#ff0'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('saving'), W/2, H - 50); } 
+            } else {
+                ctx.fillStyle = '#ff0'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('mustLogin'), W/2, H - 100); 
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText("[ ENTER ] " + t('login'), W/2, H - 50);
+            }
+        } else if (gameState === 'arcadeOver') {
+            ctx.fillStyle = '#f00'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText(t('arcadeOver'), W/2, H/2 - 100);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; 
+            ctx.fillText(`TIME: ${finalRunTime.toFixed(2)}s | KILLS: ${pendingScore ? pendingScore.mguns : 0}`, W/2, H/2 - 20);
+            if (pendingScore) {
+                ctx.fillStyle = '#0f0'; ctx.font = 'bold 40px monospace'; 
+                ctx.fillText(`${t('ppEarned')} ${pendingScore.pp}`, W/2, H/2 + 40);
+            }
             if (currentUser) {
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('return'), W/2, H - 100); 
                 if (isSavingScore) { ctx.fillStyle = '#ff0'; ctx.font = 'bold 30px monospace'; ctx.fillText(t('saving'), W/2, H - 50); } 
