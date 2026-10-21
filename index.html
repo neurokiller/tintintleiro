@@ -32,6 +32,9 @@ const JSONBIN_MASTER_KEY = "$2a$10$p1bKuftCubhAHI173iTH9O0xE02xRogyAe1.yMRtbv97q
 let leaderboardData = []; 
 let isSavingScore = false;
 let leaderboardTab = 0; // 0 = Menor Tempo, 1 = Mais Vitórias, 2 = Recentes
+let selectedRow = 0;
+let speedFilter = "ALL"; 
+const speedOptions = ["ALL", "1", "2", "5", "10", "25", "50", "99", "0.5", "0.05"];
 
 // ==========================================
 // VARIÁVEIS DE CONFIGURAÇÃO
@@ -50,18 +53,13 @@ let deathAudioTimer = 0;
 let bombEffects = [];
 let screenFlash = 0;
 
-// ==========================================
-// SISTEMA DE REPLAY (SEED E CAMINHO)
-// ==========================================
+// SISTEMA DE REPLAY
 let initialSeed = 0;
 let rngState = 0;
 let replayPath = [];
 let replayBombs = [];
-
 let currentReplay = null;
-let replayFrame = 0;
 
-// Gerador de números aleatórios determinístico (LCG)
 function rand() {
     rngState = (rngState * 1664525 + 1013904223) % 4294967296;
     return rngState / 4294967296;
@@ -104,7 +102,8 @@ const i18n = {
         youWin: "YOU WIN", survived: "YOU SURVIVED HELL!", youDied: "YOU DIED",
         yourName: "YOUR NAME:", enterName: "Type name and press ENTER", timeLabel: "TIME:",
         level: "LEVEL", lives: "LIVES:", bombs: "BOMBS:", pressContinue: "Tap / Press Z to continue",
-        select: "Select", replay: "▶ REPLAY", replayMode: "REPLAY MODE", exitReplay: "Tap / Press Z to exit"
+        select: "Select", replay: "▶ REPLAY", replayMode: "REPLAY MODE", exitReplay: "Tap / Press Z to exit",
+        filter: "FILTER: [ ALL ] (Press C)", filterSpeed: "FILTER: [ {s}x ] (Press C)"
     },
     pt: {
         start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
@@ -117,7 +116,8 @@ const i18n = {
         youWin: "VITÓRIA", survived: "VOCÊ VENCEU O INFERNO!", youDied: "VOCÊ MORREU",
         yourName: "SEU NOME:", enterName: "Digite seu nome e aperte ENTER", timeLabel: "TEMPO:",
         level: "NÍVEL", lives: "VIDAS:", bombs: "BOMBAS:", pressContinue: "Toque / Aperte Z para continuar",
-        select: "Selecionar", replay: "▶ REPLAY", replayMode: "MODO REPLAY", exitReplay: "Toque / Aperte Z para sair"
+        select: "Selecionar", replay: "▶ REPLAY", replayMode: "MODO REPLAY", exitReplay: "Toque / Aperte Z para sair",
+        filter: "FILTRO: [ TODOS ] (Aperte C)", filterSpeed: "FILTRO: [ {s}x ] (Aperte C)"
     },
     cn: {
         start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
@@ -130,10 +130,15 @@ const i18n = {
         youWin: "胜利", survived: "你在地狱中幸存！", youDied: "你死了",
         yourName: "你的名字:", enterName: "输入名字并回车", timeLabel: "时间:",
         level: "关卡", lives: "生命:", bombs: "炸弹:", pressContinue: "点击 / 按Z继续",
-        select: "选择", replay: "▶ 回放", replayMode: "回放模式", exitReplay: "点击 / 按Z退出"
+        select: "选择", replay: "▶ 回放", replayMode: "回放模式", exitReplay: "点击 / 按Z退出",
+        filter: "过滤: [ 全部 ] (按C)", filterSpeed: "过滤: [ {s}x ] (按C)"
     }
 };
-function t(key) { return i18n[lang][key] || key; }
+function t(key, extra) { 
+    let str = i18n[lang][key] || key; 
+    if (extra) str = str.replace("{s}", extra);
+    return str;
+}
 
 // ==========================================
 // VARIÁVEIS GLOBAIS DO JOGO
@@ -214,6 +219,7 @@ async function fetchLeaderboard() {
     });
     const data = await res.json();
     leaderboardData = data.record.leaderboard || [];
+    selectedRow = 0;
   } catch (e) { 
     console.error("Erro ao buscar:", e);
     leaderboardData = []; 
@@ -236,11 +242,8 @@ async function saveScore(nome, tempo, speed, mguns) {
         { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }
     );
 
-    // EMPACOTANDO O REPLAY PARA POUPAR ESPAÇO (String de números separados por vírgula)
     let replayString = "";
-    if (replayPath.length > 0) {
-        replayString = replayPath.join(",");
-    }
+    if (replayPath.length > 0) replayString = replayPath.join(",");
 
     lb.push({ 
         nome: nome, 
@@ -249,7 +252,6 @@ async function saveScore(nome, tempo, speed, mguns) {
         metralhas: mguns, 
         data: dateStr,
         timestamp: Date.now(),
-        // SALVANDO REPLAY COMPRIMIDO (Seed, Caminho e Bombas)
         replay: {
             s: initialSeed,
             p: replayString,
@@ -270,15 +272,58 @@ async function saveScore(nome, tempo, speed, mguns) {
 }
 
 // ==========================================
+// PROCESSAMENTO DA LISTA DA LEADERBOARD
+// ==========================================
+function getLeaderboardList() {
+    if (leaderboardTab === 0) {
+        let sorted = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999));
+        
+        // O 1º lugar global SEMPRE é salvo independente do filtro
+        let globalWR = sorted.length > 0 ? sorted[0] : null;
+
+        let filtered = sorted;
+        if (speedFilter !== 'ALL') {
+            let sf = parseFloat(speedFilter);
+            filtered = sorted.filter(run => Math.abs((run.velocidade||1) - sf) < 0.01);
+        }
+
+        // Filtra o melhor de cada jogador
+        let bestPerPlayer = {};
+        let uniqueList = [];
+        for (let run of filtered) {
+            if (!bestPerPlayer[run.nome]) {
+                bestPerPlayer[run.nome] = true;
+                uniqueList.push(run);
+            }
+        }
+
+        // Se o Recorde Global não estiver na lista filtrada, injeta ele no topo
+        if (globalWR && !uniqueList.find(r => r.nome === globalWR.nome && r.tempo === globalWR.tempo && r.velocidade === globalWR.velocidade)) {
+            uniqueList.unshift(globalWR);
+        }
+
+        return uniqueList.slice(0, 10);
+    } else if (leaderboardTab === 1) {
+        let winsMap = {};
+        leaderboardData.forEach(run => {
+            if(!winsMap[run.nome]) winsMap[run.nome] = 0;
+            winsMap[run.nome]++;
+        });
+        let topWins = Object.keys(winsMap).map(name => ({ nome: name, vitorias: winsMap[name] }));
+        topWins.sort((a, b) => b.vitorias - a.vitorias);
+        return topWins.slice(0, 10);
+    } else {
+        let recent = [...leaderboardData].sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+        return recent.slice(0, 10);
+    }
+}
+
+// ==========================================
 // ÁUDIO E VELOCIDADE
 // ==========================================
 function initAudioContext() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
 function playExplosionSound() {
@@ -433,7 +478,6 @@ function setupLevel(level) {
   if (level === 1) {
       gameStartTime = performance.now();
       machineGunCount = 0; 
-      // SISTEMA DE REPLAY: GERA O SEED E COMEÇA A GRAVAR
       initialSeed = Math.floor(Math.random() * 1000000);
       rngState = initialSeed;
       replayPath = [];
@@ -443,22 +487,16 @@ function setupLevel(level) {
 
 function initGame() { setupLevel(1); }
 
-// ==========================================
-// INICIAR REPLAY
-// ==========================================
 function startReplay(entry) {
-    if (!entry.replay || !entry.replay.p) return; // Se não tiver replay (runs antigas), não faz nada
+    if (!entry.replay || !entry.replay.p) return; 
     
-    // Configura a semente e o estado
     rngState = entry.replay.s;
     gameSpeed = entry.velocidade || 1.0;
     
-    // Descomprime o caminho e as bombas
     replayPath = entry.replay.p.split(",").map(Number);
     replayBombs = entry.replay.b ? entry.replay.b.split(",").map(Number) : [];
-    replayFrame = 0;
     
-    currentLevel = 6; // Usado só para o HUD
+    currentLevel = 6; 
     player = { x: W/2, y: H - 100, r: 3, lives: 3 };
     boss = { x: W/2, y: 200, r: 80, hp: 99999, maxHp: 99999, timer: 0 };
     bullets = []; playerBullets = []; lasers = [];
@@ -483,11 +521,8 @@ function toggleLanguage() {
 }
 
 function changeGameSpeed(dir) {
-    if (dir > 0) { 
-        gameSpeed = Math.min(99.00, parseFloat((gameSpeed + 0.05).toFixed(2)));
-    } else { 
-        gameSpeed = Math.max(0.05, parseFloat((gameSpeed - 0.05).toFixed(2)));
-    }
+    if (dir > 0) gameSpeed = Math.min(99.00, parseFloat((gameSpeed + 0.05).toFixed(2)));
+    else gameSpeed = Math.max(0.05, parseFloat((gameSpeed - 0.05).toFixed(2)));
     saveSettings();
     updateAudioSpeed();
 }
@@ -510,33 +545,41 @@ function handleAction(action) {
             if (optionIndex === 1) bgTheme = 1;
             if (optionIndex === 2) bgTheme = 2;
             if (optionIndex === 3) autoFireEnabled = !autoFireEnabled;
-            if (optionIndex === 4) { 
-                possessedMusicEnabled = !possessedMusicEnabled; 
-                togglePossessedMusic(possessedMusicEnabled); 
-            }
+            if (optionIndex === 4) { possessedMusicEnabled = !possessedMusicEnabled; togglePossessedMusic(possessedMusicEnabled); }
             if (optionIndex === 5) mouseControlEnabled = !mouseControlEnabled;
             if (optionIndex === 6) changeGameSpeed(1);
             if (optionIndex === 7) gameState = 'menu';
-            
             saveSettings();
         }
     } else if (gameState === 'leaderboard') {
-        if (action === 'left') leaderboardTab = (leaderboardTab + 2) % 3;
-        if (action === 'right') leaderboardTab = (leaderboardTab + 1) % 3;
-        if (action === 'select') gameState = 'menu';
+        if (action === 'left') { leaderboardTab = (leaderboardTab + 2) % 3; selectedRow = 0; }
+        if (action === 'right') { leaderboardTab = (leaderboardTab + 1) % 3; selectedRow = 0; }
+        if (action === 'up') selectedRow = Math.max(0, selectedRow - 1);
+        if (action === 'down') {
+            let list = getLeaderboardList();
+            selectedRow = Math.min(list.length - 1, selectedRow + 1);
+        }
+        if (action === 'select') { 
+            let list = getLeaderboardList();
+            if (list[selectedRow] && list[selectedRow].replay) {
+                startReplay(list[selectedRow]);
+            } else {
+                gameState = 'menu'; 
+            }
+        }
     } else if (gameState === 'replay') {
         if (action === 'select') { 
             gameState = 'leaderboard'; 
             fetchLeaderboard();
+            selectedRow = 0;
         }
     } else if (gameState === 'levelCleared') {
         if (action === 'select' && currentLevel < 6) setupLevel(currentLevel + 1);
     } else if (gameState === 'gameOver' || gameState === 'gameWin') {
-        if (action === 'select') { window.location.reload(); }
+        if (action === 'select') window.location.reload();
     } else if (gameState === 'playing') {
         if (action === 'bomb' && bombs > 0 && bombCooldown <= 0) {
             bombs--; bullets = []; lasers = []; boss.hp -= 300; screenShake = 30; bombCooldown = 30;
-            
             playExplosionSound();
             screenFlash = 1.0; 
             
@@ -550,13 +593,7 @@ function handleAction(action) {
                     size: 20 + Math.random() * 40
                 });
             }
-            bombEffects.push({
-                x: player.x, y: player.y,
-                radius: 10, 
-                alpha: 1.0,
-                letters: bombLetters
-            });
-            
+            bombEffects.push({ x: player.x, y: player.y, radius: 10, alpha: 1.0, letters: bombLetters });
             replayBombs.push(boss.timer);
         }
     }
@@ -569,6 +606,13 @@ window.addEventListener('keydown', e => {
   if (gameState === 'options' && optionIndex === 6) {
       if (k === 'arrowleft' || k === 'a') { changeGameSpeed(-1); return; }
       if (k === 'arrowright' || k === 'd') { changeGameSpeed(1); return; }
+  }
+
+  if (gameState === 'leaderboard' && (k === 'c' || k === 'ç')) {
+      let idx = speedOptions.indexOf(speedFilter);
+      speedFilter = speedOptions[(idx + 1) % speedOptions.length];
+      selectedRow = 0;
+      return;
   }
 
   if (keys[k]) return; 
@@ -633,31 +677,30 @@ canvas.addEventListener('pointerdown', e => {
             }
         } else if (gameState === 'leaderboard') {
             if (pos.y > 120 && pos.y < 160) {
-                if (pos.x < W/3) leaderboardTab = 0;
-                else if (pos.x < 2*W/3) leaderboardTab = 1;
-                else leaderboardTab = 2;
+                // Muda de aba
+                if (pos.x < W/3) { leaderboardTab = 0; selectedRow = 0; }
+                else if (pos.x < 2*W/3) { leaderboardTab = 1; selectedRow = 0; }
+                else { leaderboardTab = 2; selectedRow = 0; }
+            } else if (pos.x > W/2 - 150 && pos.x < W/2 + 150 && pos.y > 170 && pos.y < 200 && leaderboardTab === 0) {
+                // Clica no Filtro
+                let idx = speedOptions.indexOf(speedFilter);
+                speedFilter = speedOptions[(idx + 1) % speedOptions.length];
+                selectedRow = 0;
             } else {
-                // VERIFICA SE CLICOU EM UMA LINHA PARA REPLAY
-                if (leaderboardTab === 0) {
-                    let topTimes = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999)).slice(0, 10);
-                    for(let i=0; i<topTimes.length; i++) {
-                        let y = 230 + i * 35;
-                        if (pos.y > y - 17 && pos.y < y + 17 && pos.x > W - 200 && topTimes[i].replay) {
-                            startReplay(topTimes[i]);
-                            return;
+                // Clica na linha
+                let list = getLeaderboardList();
+                for (let i = 0; i < list.length; i++) {
+                    let y = 250 + i * 35;
+                    if (pos.y > y - 20 && pos.y < y + 15) {
+                        selectedRow = i;
+                        if (list[i].replay) {
+                            startReplay(list[i]);
+                        } else {
+                            handleAction('select');
                         }
-                    }
-                } else if (leaderboardTab === 2) {
-                    let recentRuns = [...leaderboardData].sort((a,b) => (b.timestamp||0) - (a.timestamp||0)).slice(0, 10);
-                    for(let i=0; i<recentRuns.length; i++) {
-                        let y = 230 + i * 35;
-                        if (pos.y > y - 17 && pos.y < y + 17 && pos.x > W - 200 && recentRuns[i].replay) {
-                            startReplay(recentRuns[i]);
-                            return;
-                        }
+                        return;
                     }
                 }
-                // Se clicar fora, volta pro menu
                 handleAction('select');
             }
         } else if (gameState === 'replay') {
@@ -710,7 +753,6 @@ function update() {
   if (screenShake > 0) screenShake--; 
   if (screenFlash > 0) screenFlash -= 0.05; 
 
-  // Atualiza os efeitos visuais da bomba
   for (let i = bombEffects.length - 1; i >= 0; i--) {
       let be = bombEffects[i];
       be.radius += 40; 
@@ -722,9 +764,6 @@ function update() {
       if (be.alpha <= 0) bombEffects.splice(i, 1);
   }
 
-  // ==========================================
-  // LÓGICA DO JOGADOR
-  // ==========================================
   if (gameState === 'playing') {
       currentRunTime = (performance.now() - gameStartTime) / 1000;
       
@@ -747,12 +786,10 @@ function update() {
           player.cooldown = 4;
       }
       
-      // GRAVAÇÃO DO REPLAY
       if (boss.timer % 4 === 0 && replayPath.length < 6000) {
           replayPath.push(Math.round(player.x), Math.round(player.y), Math.round(boss.hp));
       }
   } else if (gameState === 'replay') {
-      // LÊ O CAMINHO DO REPLAY
       let idx = Math.floor(boss.timer / 4) * 3;
       if (idx < replayPath.length) {
           player.x = replayPath[idx];
@@ -764,9 +801,6 @@ function update() {
       }
   }
 
-  // ==========================================
-  // LÓGICA DO BOSS (IGUAL PRA PLAYING E REPLAY)
-  // ==========================================
   let speedMult = 1 + (currentLevel * 0.15);
   boss.x = W/2 + Math.sin(boss.timer / (80 / speedMult)) * 200;
   boss.y = 200 + Math.cos(boss.timer / (100 / speedMult)) * 50;
@@ -790,7 +824,6 @@ function update() {
     if (currentLevel === 6) lasers.push({ angle: angle + Math.PI/4, life: 70, warning: 40 });
   }
 
-  // Metralhadora Chinesa usa a RNG
   if (machineGunEvent === 0 && rand() < 0.0005) { 
     machineGunEvent = 1; 
     machineGunTimer = 120; 
@@ -820,7 +853,6 @@ function update() {
 
   if (invulnerable > 0) invulnerable--;
 
-  // REPLAY: DESATIVA COLISÕES (apenas roda a física do boss e balas)
   if (gameState === 'replay') {
       for (let i = playerBullets.length - 1; i >= 0; i--) {
           let pb = playerBullets[i];
@@ -837,27 +869,19 @@ function update() {
           l.life--; l.warning--;
           if (l.life <= 0) lasers.splice(i, 1);
       }
-      // Se o replay foi usado uma bomba, limpa os tiros
       if (replayBombs.includes(boss.timer)) {
           bullets = []; lasers = [];
           playExplosionSound();
           screenFlash = 1.0;
           let bombLetters = [];
           for (let i = 0; i < 30; i++) {
-              bombLetters.push({
-                  char: chineseChars[Math.floor(Math.random() * chineseChars.length)],
-                  angle: Math.random() * Math.PI * 2,
-                  dist: Math.random() * 100,
-                  speed: 10 + Math.random() * 20,
-                  size: 20 + Math.random() * 40
-              });
+              bombLetters.push({ char: chineseChars[Math.floor(Math.random() * chineseChars.length)], angle: Math.random() * Math.PI * 2, dist: Math.random() * 100, speed: 10 + Math.random() * 20, size: 20 + Math.random() * 40 });
           }
           bombEffects.push({ x: player.x, y: player.y, radius: 10, alpha: 1.0, letters: bombLetters });
       }
       return; 
   }
 
-  // COLISÕES NORMAIS DO JOGO (APENAS SE ESTIVER JOGANDO)
   for (let i = playerBullets.length - 1; i >= 0; i--) {
     let pb = playerBullets[i];
     if (!pb) continue;
@@ -867,10 +891,8 @@ function update() {
       boss.hp -= pb.damage; playerBullets.splice(i, 1);
       if (boss.hp <= 0) { 
         boss.hp = 0; 
-        if (currentLevel === 6) { 
-            finalRunTime = currentRunTime;
-            gameState = 'nameInput'; playerNameInput = ""; 
-        } else { gameState = 'levelCleared'; }
+        if (currentLevel === 6) { finalRunTime = currentRunTime; gameState = 'nameInput'; playerNameInput = ""; } 
+        else { gameState = 'levelCleared'; }
         triggerGlitchAudio(); 
       }
     } else if (pb.y < 0) playerBullets.splice(i, 1);
@@ -883,11 +905,7 @@ function update() {
     let dx = b.x - player.x; let dy = b.y - player.y;
     if (invulnerable <= 0 && dx*dx + dy*dy < (b.r + player.r)*(b.r + player.r)) {
       player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-      if (player.lives <= 0) { 
-          gameState = 'gameOver'; 
-          screenShake = 0; 
-          startDeathEffect(); 
-      }
+      if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); }
       break;
     }
     if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
@@ -901,11 +919,7 @@ function update() {
       let dist = Math.abs((player.x - boss.x) * Math.sin(l.angle) - (player.y - boss.y) * Math.cos(l.angle));
       if (dist < 25) {
         player.lives--; invulnerable = 120; bullets = []; screenShake = 20;
-        if (player.lives <= 0) { 
-            gameState = 'gameOver'; 
-            screenShake = 0; 
-            startDeathEffect(); 
-        }
+        if (player.lives <= 0) { gameState = 'gameOver'; screenShake = 0; startDeathEffect(); }
       }
     }
     if (l.life <= 0) lasers.splice(i, 1);
@@ -926,12 +940,9 @@ function draw() {
   else if (bgTheme === 2) {
     ctx.fillStyle = '#DE2910'; ctx.fillRect(-50, -50, W + 100, H + 100);
     ctx.fillStyle = '#FFDE00';
-    for(let i=0; i<chinaStars.length; i++) {
-        let s = chinaStars[i]; ctx.font = `bold ${s.size}px Arial`; ctx.fillText("★", s.x, s.y);
-    }
+    for(let i=0; i<chinaStars.length; i++) { let s = chinaStars[i]; ctx.font = `bold ${s.size}px Arial`; ctx.fillText("★", s.x, s.y); }
   }
 
-  // EFEITO VISUAL DA BOMBA
   if (gameState === 'playing' || gameState === 'levelCleared' || gameState === 'replay') {
       for (let be of bombEffects) {
           ctx.save();
@@ -942,13 +953,11 @@ function draw() {
           gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
           ctx.fillStyle = gradient;
           ctx.beginPath(); ctx.arc(be.x, be.y, be.radius, 0, Math.PI*2); ctx.fill();
-
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           for (let l of be.letters) {
               let lx = be.x + Math.cos(l.angle) * l.dist;
               let ly = be.y + Math.sin(l.angle) * l.dist;
-              ctx.fillStyle = '#ff0000';
-              ctx.font = `bold ${l.size}px "Noto Sans CJK SC", sans-serif`;
+              ctx.fillStyle = '#ff0000'; ctx.font = `bold ${l.size}px "Noto Sans CJK SC", sans-serif`;
               ctx.fillText(l.char, lx, ly);
           }
           ctx.restore();
@@ -960,7 +969,6 @@ function draw() {
       ctx.fillRect(-50, -50, W + 100, H + 100);
   }
 
-  // Botão de Idioma
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(W - 140, 10, 130, 40);
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(W - 140, 10, 130, 40);
@@ -992,11 +1000,7 @@ function draw() {
     ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
     ctx.fillText(t('options'), W/2, 100);
 
-    const optionsList = [
-        t('bgOrig'), t('bgBlack'), t('bgChina'), 
-        t('autoFire'), t('possessedMusic'), t('mouseCtrl'), t('gameSpeed'), t('back')
-    ];
-    
+    const optionsList = [t('bgOrig'), t('bgBlack'), t('bgChina'), t('autoFire'), t('possessedMusic'), t('mouseCtrl'), t('gameSpeed'), t('back')];
     ctx.font = 'bold 26px monospace';
     for (let i = 0; i < optionsList.length; i++) {
         let text = optionsList[i];
@@ -1010,7 +1014,6 @@ function draw() {
         ctx.fillStyle = optionIndex === i ? '#0f0' : '#fff';
         ctx.fillText((optionIndex === i ? "> " : "") + text, W/2, 180 + i * 50);
     }
-    
     if (optionIndex === 6) {
         ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace';
         ctx.fillText(t('useArrows'), W/2, 590);
@@ -1021,7 +1024,7 @@ function draw() {
     ctx.textAlign = 'center'; ctx.fillStyle = '#f00'; ctx.font = 'bold 50px Impact, sans-serif';
     ctx.fillText("🏆 LEADERBOARD 🏆", W/2, 60);
     
-    // AS 3 ABAS
+    // ABAS
     ctx.font = 'bold 20px monospace';
     ctx.fillStyle = leaderboardTab === 0 ? '#0f0' : '#666';
     ctx.fillText("[ " + t('tabFast') + " ]", W/2 - 230, 120);
@@ -1030,31 +1033,46 @@ function draw() {
     ctx.fillStyle = leaderboardTab === 2 ? '#0f0' : '#666';
     ctx.fillText("[ " + t('tabRecent') + " ]", W/2 + 230, 120);
 
-    ctx.fillStyle = '#555'; ctx.font = '16px monospace';
-    ctx.fillText("< >", W/2, 150);
+    ctx.fillStyle = '#555'; ctx.font = '16px monospace'; ctx.fillText("< >", W/2, 150);
 
+    // FILTRO DE VELOCIDADE (Apenas na aba de Tempo)
+    if (leaderboardTab === 0) {
+        ctx.fillStyle = speedFilter === 'ALL' ? '#ff0' : '#0ff'; 
+        ctx.font = 'bold 18px monospace';
+        let filterTxt = speedFilter === 'ALL' ? t('filter') : t('filterSpeed', speedFilter);
+        ctx.fillText(filterTxt, W/2, 180);
+    }
+
+    let list = getLeaderboardList();
     ctx.font = '16px monospace';
     
     if (JSONBIN_BIN_ID.includes("COLE_AQUI")) { 
         ctx.fillStyle = '#ff0'; ctx.fillText(t('configApi'), W/2, 300); 
     }
-    else if (leaderboardData.length === 0) { 
+    else if (list.length === 0) { 
         ctx.fillStyle = '#fff'; ctx.fillText(t('noRecords'), W/2, 300); 
     }
     else {
         if (leaderboardTab === 0) {
-            ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 190); 
-            ctx.fillText(t('time'), 220, 190); 
-            ctx.fillText(t('speed'), 310, 190);
-            ctx.fillText(t('mGuns'), 390, 190);
-            ctx.fillText(t('date'), 520, 190);
-            ctx.fillText(t('replay'), 680, 190);
+            ctx.fillStyle = '#fff'; 
+            ctx.fillText(t('name'), 80, 220); 
+            ctx.fillText(t('time'), 220, 220); 
+            ctx.fillText(t('speed'), 310, 220);
+            ctx.fillText(t('mGuns'), 390, 220);
+            ctx.fillText(t('date'), 520, 220);
+            ctx.fillText(t('replay'), 680, 220);
 
-            let topTimes = [...leaderboardData].sort((a,b) => (a.tempo||99999) - (b.tempo||99999)).slice(0, 10);
+            for (let i = 0; i < list.length; i++) {
+                let entry = list[i]; let y = 260 + i * 35;
+                
+                // Highlight da linha selecionada
+                if (i === selectedRow) {
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                    ctx.fillRect(10, y - 22, W - 20, 35);
+                }
 
-            for (let i = 0; i < topTimes.length; i++) {
-                let entry = topTimes[i]; let y = 230 + i * 35;
                 ctx.fillStyle = i === 0 ? '#ff0' : '#ddd';
+                
                 let timeStr = entry.tempo ? entry.tempo.toFixed(2) + "s" : "--";
                 let spdStr = entry.velocidade ? entry.velocidade.toFixed(2) + "x" : "1x";
                 let mGunStr = entry.metralhas !== undefined ? entry.metralhas : "-";
@@ -1066,40 +1084,42 @@ function draw() {
                 ctx.fillText(dateStr, 520, y);
                 
                 if (entry.replay) {
-                    ctx.fillStyle = '#0ff'; ctx.fillText(t('replay'), 680, y);
+                    ctx.fillStyle = i === selectedRow ? '#fff' : '#0ff'; 
+                    ctx.fillText(t('replay'), 680, y);
                 }
             }
         } else if (leaderboardTab === 1) {
-            ctx.fillStyle = '#fff'; ctx.fillText(t('name'), W/2 - 100, 190); 
-            ctx.fillText(t('wins'), W/2 + 100, 190);
+            ctx.fillStyle = '#fff'; ctx.fillText(t('name'), W/2 - 100, 220); 
+            ctx.fillText(t('wins'), W/2 + 100, 220);
 
-            let winsMap = {};
-            leaderboardData.forEach(run => {
-                if(!winsMap[run.nome]) winsMap[run.nome] = 0;
-                winsMap[run.nome]++;
-            });
-            let topWins = Object.keys(winsMap).map(name => ({ nome: name, vitorias: winsMap[name] }));
-            topWins.sort((a, b) => b.vitorias - a.vitorias);
-            topWins = topWins.slice(0, 10);
+            for (let i = 0; i < list.length; i++) {
+                let entry = list[i]; let y = 260 + i * 35;
+                
+                if (i === selectedRow) {
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                    ctx.fillRect(10, y - 22, W - 20, 35);
+                }
 
-            for (let i = 0; i < topWins.length; i++) {
-                let entry = topWins[i]; let y = 230 + i * 35;
                 ctx.fillStyle = i === 0 ? '#ff0' : '#ddd';
                 ctx.textAlign = "right"; ctx.fillText(entry.nome, W/2 - 20, y); 
                 ctx.textAlign = "left"; ctx.fillText(entry.vitorias, W/2 + 20, y);
             }
         } else {
-            ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 190); 
-            ctx.fillText(t('time'), 220, 190); 
-            ctx.fillText(t('speed'), 310, 190);
-            ctx.fillText(t('mGuns'), 390, 190);
-            ctx.fillText(t('date'), 520, 190);
-            ctx.fillText(t('replay'), 680, 190);
+            ctx.fillStyle = '#fff'; ctx.fillText(t('name'), 80, 220); 
+            ctx.fillText(t('time'), 220, 220); 
+            ctx.fillText(t('speed'), 310, 220);
+            ctx.fillText(t('mGuns'), 390, 220);
+            ctx.fillText(t('date'), 520, 220);
+            ctx.fillText(t('replay'), 680, 220);
 
-            let recentRuns = [...leaderboardData].sort((a,b) => (b.timestamp||0) - (a.timestamp||0)).slice(0, 10);
+            for (let i = 0; i < list.length; i++) {
+                let entry = list[i]; let y = 260 + i * 35;
+                
+                if (i === selectedRow) {
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                    ctx.fillRect(10, y - 22, W - 20, 35);
+                }
 
-            for (let i = 0; i < recentRuns.length; i++) {
-                let entry = recentRuns[i]; let y = 230 + i * 35;
                 ctx.fillStyle = '#ddd';
                 let timeStr = entry.tempo ? entry.tempo.toFixed(2) + "s" : "--";
                 let spdStr = entry.velocidade ? entry.velocidade.toFixed(2) + "x" : "1x";
@@ -1112,7 +1132,8 @@ function draw() {
                 ctx.fillText(dateStr, 520, y);
 
                 if (entry.replay) {
-                    ctx.fillStyle = '#0ff'; ctx.fillText(t('replay'), 680, y);
+                    ctx.fillStyle = i === selectedRow ? '#fff' : '#0ff'; 
+                    ctx.fillText(t('replay'), 680, y);
                 }
             }
         }
@@ -1136,10 +1157,7 @@ function draw() {
     ctx.fillText(t('enterName'), W/2, H/2 + 120);
   }
   else {
-    // JOGO OU REPLAY
     if (gameState !== 'gameOver' && gameState !== 'gameWin') {
-      
-      // MENSAGEM DE REPLAY (Se estiver no replay)
       if (gameState === 'replay') {
           ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, 80);
           ctx.fillStyle = '#f00'; ctx.font = 'bold 40px Impact, sans-serif'; ctx.textAlign = 'center';
@@ -1198,27 +1216,19 @@ function draw() {
           ctx.fillStyle = '#fff'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("💣", W - 80, H - 80);
       }
 
-      // HUD (ESCONDIDO NO REPLAY, MAS MOSTRA O HP DO BOSS)
       if (gameState === 'playing') {
           ctx.fillStyle = '#111'; ctx.fillRect(100, 40, 600, 40); ctx.strokeStyle = '#f00'; ctx.lineWidth = 4; ctx.strokeRect(100, 40, 600, 40);
           let hpWidth = 600 * (boss.hp / boss.maxHp); ctx.fillStyle = boss.hp > (boss.maxHp/2) ? '#f00' : '#ff0'; ctx.fillRect(100, 40, hpWidth, 40);
           ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.textAlign = "center"; ctx.fillText(`TINTINTLEIRO - ${t('level')} ${currentLevel}`, W/2, 70);
-          
           ctx.textAlign = "right"; ctx.font = 'bold 26px monospace'; ctx.fillStyle = '#0ff';
           ctx.fillText(`${t('time')} ${currentRunTime.toFixed(2)}s`, W - 30, 130);
-
           ctx.textAlign = "left"; ctx.font = 'bold 24px monospace'; ctx.fillStyle = '#f00';
           if (player.lives > 10) ctx.fillText(`${t('lives')} ❤ x ${player.lives}`, 100, 120);
           else ctx.fillText(t('lives') + " " + "❤".repeat(player.lives), 100, 120);
           ctx.fillStyle = '#0ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(`${t('bombs')} ${bombs} [X]`, 100, 150);
-          
-          if (gameSpeed !== 1.0) {
-              ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace';
-              ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160);
-          }
+          if (gameSpeed !== 1.0) { ctx.textAlign = "right"; ctx.fillStyle = '#ff0'; ctx.font = 'bold 20px monospace'; ctx.fillText(`SPEED: ${gameSpeed.toFixed(2)}x`, W - 30, 160); }
       } else if (gameState === 'replay') {
-          // HP do boss simplificado no Replay
-          let hpRatio = boss.hp / (1500 + (currentLevel * 800)); // Fallback visual
+          let hpRatio = boss.hp / (1500 + (currentLevel * 800)); 
           ctx.fillStyle = '#f00'; ctx.fillRect(100, 100, 600 * Math.max(0, hpRatio), 10);
       }
     }
@@ -1232,9 +1242,7 @@ function draw() {
     }
 
     if (gameState === 'levelCleared' || gameState === 'gameWin' || gameState === 'gameOver') {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
-      ctx.textAlign = 'center';
-      
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center';
       if (gameState === 'levelCleared') {
         ctx.fillStyle = '#0f0'; ctx.font = 'bold 80px Impact, sans-serif'; ctx.fillText(t('youWin'), W/2, H/2 - 100);
         for(let i=0; i<20; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#0f0' : '#fff'; ctx.font = `bold ${20 + Math.random() * 60}px Impact, sans-serif`; ctx.fillText(t('youWin'), Math.random()*W, Math.random()*H); }
