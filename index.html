@@ -42,7 +42,7 @@ let loginInput = "";
 let loginPass = "";
 let loginMode = "username"; 
 let loginError = "";
-let pendingScore = null; // Armazena o score caso precise registrar depois de vencer
+let pendingScore = null; 
 
 // ==========================================
 // VARIÁVEIS DE CONFIGURAÇÃO
@@ -105,7 +105,7 @@ const i18n = {
         yourName: "YOUR NAME:", enterName: "Type name and press ENTER", timeLabel: "TIME:",
         level: "LEVEL", lives: "LIVES:", bombs: "BOMBS:", pressContinue: "Tap / Press Z to continue",
         select: "Select", profileTitle: "PLAYER PROFILE", totalPP: "TOTAL PP", totalWins: "TOTAL WINS", runHistory: "RUN HISTORY", rank: "RANK",
-        login: "LOGIN / REGISTER", logout: "LOGOUT", loggedAs: "LOGGED AS:", submit: "SUBMIT", username: "USERNAME:", password: "PASSWORD:", loginErr: "INVALID PASSWORD!", mustLogin: "LOGIN TO SAVE SCORES!"
+        login: "LOGIN / REGISTER", logout: "LOGOUT", loggedAs: "LOGGED AS:", submit: "SUBMIT", username: "USERNAME:", password: "PASSWORD:", loginErr: "INVALID PASSWORD!", mustLogin: "LOGIN TO SAVE SCORES!", saving: "SAVING SCORE..."
     },
     pt: {
         start: "INICIAR JOGO", options: "OPÇÕES", leaderboard: "LEADERBOARD", madeBy: "FEITO POR NEUROKILLER",
@@ -119,7 +119,7 @@ const i18n = {
         yourName: "SEU NOME:", enterName: "Digite seu nome e aperte ENTER", timeLabel: "TEMPO:",
         level: "NÍVEL", lives: "VIDAS:", bombs: "BOMBAS:", pressContinue: "Toque / Aperte Z para continuar",
         select: "Selecionar", profileTitle: "PERFIL DO JOGADOR", totalPP: "PP TOTAL", totalWins: "VITÓRIAS TOTAIS", runHistory: "HISTÓRICO DE RUNS", rank: "RANK",
-        login: "LOGIN / REGISTRAR", logout: "SAIR", loggedAs: "LOGADO COMO:", submit: "ENVIAR", username: "NOME DE USUÁRIO:", password: "SENHA:", loginErr: "SENHA INCORRETA!", mustLogin: "FAÇA LOGIN PARA SALVAR!"
+        login: "LOGIN / REGISTRAR", logout: "SAIR", loggedAs: "LOGADO COMO:", submit: "ENVIAR", username: "NOME DE USUÁRIO:", password: "SENHA:", loginErr: "SENHA INCORRETA!", mustLogin: "FAÇA LOGIN PARA SALVAR!", saving: "SALVANDO RECORDE..."
     },
     cn: {
         start: "开始游戏", options: "设置", leaderboard: "排行榜", madeBy: "制作者: NEUROKILLER",
@@ -133,7 +133,7 @@ const i18n = {
         yourName: "你的名字:", enterName: "输入名字并回车", timeLabel: "时间:",
         level: "关卡", lives: "生命:", bombs: "炸弹:", pressContinue: "点击 / 按Z继续",
         select: "选择", profileTitle: "玩家资料", totalPP: "总PP", totalWins: "总胜利", runHistory: "运行记录", rank: "排名",
-        login: "登录 / 注册", logout: "登出", loggedAs: "登录为:", submit: "提交", username: "用户名:", password: "密码:", loginErr: "密码错误！", mustLogin: "登录才能保存分数！"
+        login: "登录 / 注册", logout: "登出", loggedAs: "登录为:", submit: "提交", username: "用户名:", password: "密码:", loginErr: "密码错误！", mustLogin: "登录才能保存分数！", saving: "保存中..."
     }
 };
 function t(key) { return i18n[lang][key] || key; }
@@ -237,7 +237,7 @@ async function saveScore(nome, tempo, speed, mguns) {
     const getData = await getRes.json();
     
     if (!getData.record || !getData.record.leaderboard) {
-        throw new Error("Falha ao baixar leaderboard atual.");
+        throw new Error("Falha ao baixar leaderboard atual. Save cancelado por segurança.");
     }
 
     let lb = getData.record.leaderboard;
@@ -311,7 +311,7 @@ async function submitLogin() {
     
     loginInput = ""; loginPass = "";
     
-    // Se tinha um score pendente (acabou de vencer), salva agora
+    // Se tinha um score pendente, salva agora
     if (currentUser && pendingScore) {
         saveScore(currentUser, pendingScore.tempo, pendingScore.speed, pendingScore.mguns);
         pendingScore = null;
@@ -609,7 +609,10 @@ window.addEventListener('keydown', e => {
   if (k === 'arrowdown' || k === 's') handleAction('down');
   if (k === 'arrowleft' || k === 'a') handleAction('left');
   if (k === 'arrowright' || k === 'd') handleAction('right');
-  if (k === 'z' || k === 'enter' || k === ' ') handleAction('confirm');
+  
+  // Mapeamento Correto:
+  if (k === 'enter' || k === ' ') handleAction('confirm'); // Confirmar / Ver Perfil
+  if (k === 'z' || k === 'escape') handleAction('cancel');  // Voltar / Sair
   if (k === 'x') handleAction('bomb');
 });
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -756,7 +759,6 @@ function update() {
         if (currentLevel === 6) { 
             finalRunTime = currentRunTime;
             
-            // Lógica de fim de jogo e save
             if (currentUser) {
                 saveScore(currentUser, finalRunTime, gameSpeed, machineGunCount);
                 gameState = 'gameWin';
